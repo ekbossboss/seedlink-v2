@@ -185,7 +185,7 @@ export function SuperAdminUserManagement({ users, accessToken, onRefresh }: Prop
                 <td className="px-6 py-4">
                   <span
                     className={`inline-flex px-2 py-1 text-xs rounded-full capitalize ${
-                      user.role === 'super_admin'
+                    user.role === 'super_admin'
                         ? 'bg-purple-100 text-purple-800'
                         : user.role === 'admin'
                         ? 'bg-red-100 text-red-800'
@@ -293,6 +293,7 @@ export function SuperAdminUserManagement({ users, accessToken, onRefresh }: Prop
                   <option value="buyer">Buyer</option>
                   <option value="producer">Producer</option>
                   <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
                 </select>
               </div>
             </div>
@@ -326,7 +327,7 @@ export function SuperAdminUserManagement({ users, accessToken, onRefresh }: Prop
             </p>
 
             <div className="space-y-2">
-              {['buyer', 'producer', 'admin'].map((role) => (
+              {['buyer', 'producer', 'admin', 'super_admin'].map((role) => (
                 <button
                   key={role}
                   onClick={() => handleChangeRole(selectedUser.id, role)}

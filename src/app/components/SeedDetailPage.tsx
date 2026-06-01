@@ -1,46 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router";
 import { MapPin, Star, ShieldCheck, Truck, Phone, Mail, ArrowLeft, Minus, Plus } from "lucide-react";
+import { serverUrl } from "../lib/supabase";
 
 export function SeedDetailPage() {
   const { id } = useParams();
   const [quantity, setQuantity] = useState(50);
+  const [seed, setSeed] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const seed = {
-    id: id,
-    name: "Kinigi Premium",
-    variety: "Kinigi",
-    producer: "Musanze Seeds Ltd",
-    producerRating: 4.8,
-    location: "Musanze District",
-    price: 800,
-    unit: "kg",
-    minOrder: 50,
-    available: 5000,
-    rating: 4.8,
-    reviews: 24,
-    certified: true,
-    description: "High-quality Kinigi variety potato seeds, certified by Rwanda Agriculture Board. These seeds are grown in optimal highland conditions and have excellent disease resistance. Perfect for commercial farming with high yield potential.",
-    features: [
-      "Certified by Rwanda Agriculture Board",
-      "Disease resistant variety",
-      "High yield potential (25-30 tons/hectare)",
-      "Suitable for highland regions",
-      "90-day maturity period",
-    ],
-    producerInfo: {
-      name: "Musanze Seeds Ltd",
-      since: "2018",
-      certifications: ["RAB Certified", "ISO 9001"],
-      phone: "+250 788 123 456",
-      email: "info@musanzeseeds.rw",
-    },
-    images: [
-      "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=600&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1592921870789-04563d55041c?w=600&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1589927986089-35812378d9a6?w=600&h=400&fit=crop",
-    ],
-  };
+  useEffect(() => {
+    const fetchSeed = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`${serverUrl}/seeds/${id}`);
+        if (!res.ok) throw new Error('Failed to load seed');
+        const data = await res.json();
+        setSeed(data.seed || null);
+      } catch (err) {
+        console.error('Error fetching seed:', err);
+        setSeed(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) fetchSeed();
+  }, [id]);
 
   const reviews = [
     {
@@ -68,7 +54,19 @@ export function SeedDetailPage() {
 
   const [selectedImage, setSelectedImage] = useState(0);
 
-  const total = quantity * seed.price;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">Loading seed...</div>
+    );
+  }
+
+  if (!seed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">Seed not found</div>
+    );
+  }
+
+  const total = quantity * (seed.price || 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -86,13 +84,13 @@ export function SeedDetailPage() {
           <div>
             <div className="bg-white rounded-lg overflow-hidden mb-4">
               <img
-                src={seed.images[selectedImage]}
+                src={(seed.images && seed.images.length > 0) ? seed.images[selectedImage] : (seed.image || '')}
                 alt={seed.name}
                 className="w-full h-96 object-cover"
               />
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {seed.images.map((img, idx) => (
+              {((seed.images && seed.images.length > 0) ? seed.images : (seed.image ? [seed.image] : [])).map((img: string, idx: number) => (
                 <button
                   key={idx}
                   onClick={() => setSelectedImage(idx)}
