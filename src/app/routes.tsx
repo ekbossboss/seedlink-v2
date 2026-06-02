@@ -5,6 +5,7 @@ import { MarketplacePage } from "./components/MarketplacePage";
 import { ProducerRegistrationPage } from "./components/ProducerRegistrationPage";
 import { ProducerDashboard } from "./components/ProducerDashboard";
 import { SeedDetailPage } from "./components/SeedDetailPage";
+import { ProducerProfilePage } from "./components/ProducerProfilePage";
 import { AdminVerificationPage } from "./components/AdminVerificationPage";
 import { NotFoundPage } from "./components/NotFoundPage";
 import { LoginPage } from "./components/LoginPage";
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
       { path: "seed/:id", Component: SeedDetailPage },
       { path: "register-producer", Component: ProducerRegistrationPage },
       { path: "producer/dashboard", Component: ProducerDashboard },
+      { path: "producer/:id", Component: ProducerProfilePage },
       { path: "my-orders", Component: MyOrdersPage },
       { path: "favorite-sellers", Component: FavoriteSellersPage },
       { path: "profile", Component: ProfilePage },

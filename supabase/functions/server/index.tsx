@@ -499,11 +499,44 @@ app.get("/make-server-8bf31221/seeds/:id", async (c) => {
     }
 
     const producerProfile = JSON.parse(producerProfileData);
-    if (producerProfile.role !== 'producer' || !producerProfile.producer_verified) {
-      return c.json({ error: 'Seed not found' }, 404);
+
+    // Determine requester (if any)
+    const requester = await verifyUser(c.req.header('Authorization'));
+    let requesterProfile = null;
+    if (requester) {
+      const reqProfileData = await kv.get(`user:${requester.id}`);
+      if (reqProfileData) requesterProfile = JSON.parse(reqProfileData);
     }
 
-    return c.json({ seed });
+    // Build producer info and reviews for seed detail
+    const producerReviewData = await kv.getByPrefix(`review:producer_${seed.producer_id}_`);
+    const producerReviews = producerReviewData.map(r => JSON.parse(r));
+    const producerRating = producerReviews.length > 0
+      ? producerReviews.reduce((sum, review) => sum + (review.rating || 0), 0) / producerReviews.length
+      : null;
+
+    const producerInfo = {
+      name: producerProfile.business_name || producerProfile.name,
+      email: producerProfile.email,
+      phone: producerProfile.phone || null,
+      certifications: producerProfile.certificationBody ? [producerProfile.certificationBody] : [],
+      since: producerProfile.created_at,
+      location: producerProfile.district || producerProfile.address || null,
+    };
+
+    // Allow access if:
+    // - the producer is verified OR
+    // - the requester is the producer owner OR
+    // - the requester is an admin/super_admin
+    if (
+      (producerProfile.role === 'producer' && producerProfile.producer_verified) ||
+      (requester && requester.id === seed.producer_id) ||
+      (requesterProfile && isAdminOrSuperAdmin(requesterProfile))
+    ) {
+      return c.json({ seed: { ...seed, producerInfo, producerRating, producerReviews } });
+    }
+
+    return c.json({ error: 'Seed not found' }, 404);
   } catch (error) {
     console.log('Get seed error:', error);
     return c.json({ error: 'Failed to get seed' }, 500);
@@ -523,6 +556,88 @@ app.get("/make-server-8bf31221/seeds/producer/:userId", async (c) => {
   } catch (error) {
     console.log('Get producer seeds error:', error);
     return c.json({ error: 'Failed to get producer seeds' }, 500);
+  }
+});
+
+// Get producer profile, seeds and reviews
+app.get("/make-server-8bf31221/producers/:id", async (c) => {
+  try {
+    const producerId = c.req.param('id');
+    const profileData = await kv.get(`user:${producerId}`);
+    if (!profileData) {
+      return c.json({ error: 'Producer not found' }, 404);
+    }
+
+    const producer = JSON.parse(profileData);
+    if (producer.role !== 'producer') {
+      return c.json({ error: 'Producer not found' }, 404);
+    }
+
+    const seeds = (await kv.getByPrefix('seed:seed_'))
+      .map(s => JSON.parse(s))
+      .filter(s => s.producer_id === producerId && s.status === 'active');
+
+    const reviewsData = await kv.getByPrefix(`review:producer_${producerId}_`);
+    const reviews = reviewsData.map(r => JSON.parse(r));
+    const averageRating = reviews.length > 0
+      ? reviews.reduce((sum, review) => sum + (review.rating || 0), 0) / reviews.length
+      : null;
+
+    return c.json({
+      producer,
+      seeds,
+      reviews,
+      averageRating,
+      reviewCount: reviews.length,
+    });
+  } catch (error) {
+    console.log('Get producer profile error:', error);
+    return c.json({ error: 'Failed to get producer profile' }, 500);
+  }
+});
+
+app.post("/make-server-8bf31221/producers/:id/reviews", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const producerId = c.req.param('id');
+    if (user.id === producerId) {
+      return c.json({ error: 'You cannot review your own profile' }, 403);
+    }
+
+    const producerProfileData = await kv.get(`user:${producerId}`);
+    if (!producerProfileData) {
+      return c.json({ error: 'Producer not found' }, 404);
+    }
+
+    const { rating, comment } = await c.req.json();
+    if (!rating || !comment) {
+      return c.json({ error: 'Rating and comment are required' }, 400);
+    }
+
+    const reviewerProfileData = await kv.get(`user:${user.id}`);
+    const reviewerProfile = reviewerProfileData ? JSON.parse(reviewerProfileData) : null;
+    const reviewerName = reviewerProfile?.business_name || reviewerProfile?.name || 'Buyer';
+
+    const review = {
+      id: `review:producer_${producerId}_${Date.now()}_${user.id}`,
+      producer_id: producerId,
+      reviewer_id: user.id,
+      reviewer_name: reviewerName,
+      rating: Number(rating),
+      comment,
+      created_at: new Date().toISOString(),
+    };
+
+    await kv.set(review.id, JSON.stringify(review));
+
+    return c.json({ success: true, review });
+  } catch (error) {
+    console.log('Create producer review error:', error);
+    return c.json({ error: 'Failed to submit review' }, 500);
   }
 });
 
