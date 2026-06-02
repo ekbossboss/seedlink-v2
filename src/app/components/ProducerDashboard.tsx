@@ -18,7 +18,6 @@ export function ProducerDashboard() {
   
   // Form state
   const [newListing, setNewListing] = useState({
-    name: "",
     variety: "",
     category: "",
     price: "",
@@ -90,17 +89,17 @@ export function ProducerDashboard() {
   };
 
   const handleSubmitListing = async () => {
-    if (
-      !newListing.name ||
-      !newListing.variety ||
-      !newListing.category ||
-      !newListing.price ||
-      !newListing.available ||
-      !newListing.minOrder ||
-      newListing.features.length === 0 ||
-      files.length === 0
-    ) {
-      alert("Please fill in all required fields and add at least one photo.");
+    const missing: string[] = [];
+    if (!newListing.variety) missing.push('Variety');
+    if (!newListing.category) missing.push('Seed Category');
+    if (!newListing.price) missing.push('Price per kg');
+    if (!newListing.available) missing.push('Available quantity');
+    if (!newListing.minOrder) missing.push('Minimum order');
+    if (newListing.features.length === 0) missing.push('Key features (add at least one)');
+    if (files.length === 0) missing.push('Photos (add at least one)');
+
+    if (missing.length > 0) {
+      alert('Please provide the following required fields:\n- ' + missing.join('\n- '));
       return;
     }
 
@@ -147,7 +146,6 @@ export function ProducerDashboard() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: newListing.name,
           variety: newListing.variety,
           category: newListing.category,
           price: parseFloat(newListing.price),
@@ -166,7 +164,6 @@ export function ProducerDashboard() {
 
       alert("Seed listing created successfully!");
       setNewListing({
-        name: "",
         variety: "",
         category: "",
         price: "",
@@ -365,7 +362,7 @@ export function ProducerDashboard() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-lg font-semibold text-gray-900">{seed.name}</h3>
+                            <h3 className="text-lg font-semibold text-gray-900">{seed.variety}</h3>
                             <span
                               className={`px-2 py-1 text-xs rounded-full ${
                                 seed.status === "active"
@@ -376,7 +373,6 @@ export function ProducerDashboard() {
                               {seed.status === "active" ? "Active" : "Out of Stock"}
                             </span>
                           </div>
-                          <p className="text-gray-600 mb-4">Variety: {seed.variety}</p>
 
                           <div className="grid grid-cols-3 gap-4 text-sm">
                             <div>
