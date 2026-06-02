@@ -5,6 +5,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { serverUrl } from "../lib/supabase";
 import { RWANDA_DISTRICTS } from "../lib/rwandaDistricts";
 import { SEED_CATEGORIES, getSeedCategoryLabel } from "../lib/seedCategories";
+import type { QuoteRequest } from "../types/quotes";
+import { QuoteThreadPanel } from "./QuoteThreadPanel";
 
 const emptyListingForm = () => ({
   variety: "",
@@ -49,6 +51,8 @@ export function ProducerDashboard() {
   // Data states
   const [seeds, setSeeds] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
+  const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -118,6 +122,14 @@ export function ProducerDashboard() {
         if (!ordersRes.ok) throw new Error('Failed to fetch orders');
         const ordersData = await ordersRes.json();
         setOrders(ordersData.orders || []);
+
+        const quotesRes = await fetch(`${serverUrl}/quote-requests/inbox`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (quotesRes.ok) {
+          const quotesData = await quotesRes.json();
+          setQuotes(quotesData.quotes || []);
+        }
       } catch (err) {
         console.error('Error fetching data:', err);
         setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -562,76 +574,113 @@ export function ProducerDashboard() {
             )}
 
             {activeTab === "orders" && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Order Management</h2>
+              <div className="space-y-8">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">Quote requests</h2>
+                  <p className="text-sm text-gray-600 mb-6">
+                    Respond to farmers on SeedLink. When they confirm, an order is created
+                    automatically.
+                  </p>
 
-                {loading ? (
-                  <div className="flex justify-center py-8">
-                    <div className="text-gray-600">Loading orders...</div>
-                  </div>
-                ) : orders.length === 0 ? (
-                  <div className="text-center py-8 text-gray-600">
-                    No orders yet
-                  </div>
-                ) : (
-                  orders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="border border-gray-200 rounded-lg p-6 hover:border-green-300 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <div className="flex items-center gap-3 mb-1">
-                            <h3 className="font-semibold text-gray-900">{order.id}</h3>
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${
-                                order.status === "pending"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : order.status === "confirmed"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-green-100 text-green-800"
-                              }`}
-                            >
-                              {order.status}
+                  {loading ? (
+                    <div className="text-gray-600">Loading...</div>
+                  ) : quotes.length === 0 ? (
+                    <div className="text-center py-8 text-gray-600 border border-dashed border-gray-300 rounded-lg">
+                      No quote requests yet
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {quotes.map((q) => (
+                        <div
+                          key={q.id}
+                          className="border border-gray-200 rounded-lg p-6"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="font-semibold text-gray-900">
+                                {getSeedCategoryLabel(q.seed_category)}
+                                {q.seed_variety ? ` · ${q.seed_variety}` : ""}
+                              </h3>
+                              <p className="text-sm text-gray-600">
+                                {q.buyer_name} · {q.quantity} kg
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/seed/${q.seed_id}`)}
+                                className="text-sm text-green-600 hover:underline mt-1"
+                              >
+                                View listing
+                              </button>
+                            </div>
+                            <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
+                              {q.status.replace(/_/g, " ")}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600">{new Date(order.created_at).toLocaleDateString()}</p>
+                          {expandedQuoteId === q.id && accessToken && user ? (
+                            <QuoteThreadPanel
+                              quote={q}
+                              user={user}
+                              accessToken={accessToken}
+                              onUpdate={(updated) => {
+                                setQuotes((prev) =>
+                                  prev.map((item) =>
+                                    item.id === updated.id ? updated : item,
+                                  ),
+                                );
+                              }}
+                              listedUnitPrice={q.listed_unit_price}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedQuoteId(
+                                  expandedQuoteId === q.id ? null : q.id,
+                                )
+                              }
+                              className="text-green-600 hover:text-green-700 text-sm font-medium"
+                            >
+                              {expandedQuoteId === q.id ? "Hide" : "Respond on SeedLink"}
+                            </button>
+                          )}
                         </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-gray-900">
-                            {(order.quantity * order.total_price || 0).toLocaleString()} RWF
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-6">Confirmed orders</h2>
+                  {orders.length === 0 ? (
+                    <div className="text-center py-8 text-gray-600">
+                      No confirmed orders yet
+                    </div>
+                  ) : (
+                    orders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="border border-gray-200 rounded-lg p-6 mb-4"
+                      >
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">
+                              {order.seed_name || order.seed_id}
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              {new Date(order.created_at).toLocaleDateString()} ·{" "}
+                              {order.status}
+                            </p>
+                          </div>
+                          <p className="text-xl font-bold text-green-600">
+                            {(order.total || order.quantity * (order.unit_price || 0) || 0).toLocaleString()}{" "}
+                            RWF
                           </p>
                         </div>
+                        <p className="text-sm text-gray-700">{order.quantity} kg</p>
                       </div>
-
-                      <div className="grid grid-cols-3 gap-4 text-sm mb-4">
-                        <div>
-                          <span className="text-gray-500">Order Type</span>
-                          <p className="font-medium text-gray-900">Seed Purchase</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Seed</span>
-                          <p className="font-medium text-gray-900">{order.seed_id || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Quantity</span>
-                          <p className="font-medium text-gray-900">{order.quantity} kg</p>
-                        </div>
-                      </div>
-
-                      {order.status === "pending" && (
-                        <div className="flex gap-2 pt-4 border-t border-gray-200">
-                          <button className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
-                            Confirm Order
-                          </button>
-                          <button className="flex-1 bg-white text-gray-700 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
-                            Contact Buyer
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             )}
 

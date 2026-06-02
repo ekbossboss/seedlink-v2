@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
-import { MapPin, Star, ShieldCheck, Truck, Phone, Mail, ArrowLeft, Minus, Plus } from "lucide-react";
+import { MapPin, Star, ShieldCheck, Truck, ArrowLeft, Minus, Plus, FileText } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
 import { getSeedCategoryLabel, getSeedFeatures } from "../lib/seedCategories";
+import { QuoteThreadPanel } from "./QuoteThreadPanel";
+import type { QuoteRequest } from "../types/quotes";
 
 type ProducerReview = {
   id: string;
@@ -45,11 +47,17 @@ type SeedListing = {
 
 export function SeedDetailPage() {
   const { id } = useParams();
-  const { accessToken } = useAuth();
+  const navigate = useNavigate();
+  const { user, accessToken } = useAuth();
   const [seed, setSeed] = useState<SeedListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(50);
   const [selectedImage, setSelectedImage] = useState(0);
+  const [quote, setQuote] = useState<QuoteRequest | null>(null);
+  const [quoteNote, setQuoteNote] = useState("");
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [showQuoteForm, setShowQuoteForm] = useState(false);
 
   useEffect(() => {
     const fetchSeed = async () => {
@@ -76,6 +84,27 @@ export function SeedDetailPage() {
     };
     fetchSeed();
   }, [id, accessToken]);
+
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!id || !accessToken || !user) {
+        setQuote(null);
+        return;
+      }
+      try {
+        const res = await fetch(`${serverUrl}/quote-requests/seed/${id}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setQuote(data.quote || null);
+        }
+      } catch {
+        setQuote(null);
+      }
+    };
+    fetchQuote();
+  }, [id, accessToken, user]);
 
   const categoryLabel = getSeedCategoryLabel(seed?.category);
   const featureList = useMemo(
@@ -121,6 +150,42 @@ export function SeedDetailPage() {
 
   const minOrder = seed.minOrder ?? 1;
   const total = quantity * (seed.price || 0);
+  const isOwnListing = user?.id === seed.producer_id;
+  const canRequestQuote =
+    user && !isOwnListing && user.role !== "producer" && user.role !== "admin" && user.role !== "super_admin";
+
+  const submitQuoteRequest = async () => {
+    if (!accessToken || !seed) return;
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setQuoteBusy(true);
+    setQuoteError(null);
+    try {
+      const res = await fetch(`${serverUrl}/quote-requests`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          seed_id: seed.id,
+          quantity,
+          message: quoteNote,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to request quote");
+      setQuote(data.quote);
+      setShowQuoteForm(false);
+      setQuoteNote("");
+    } catch (err) {
+      setQuoteError(err instanceof Error ? err.message : "Failed to request quote");
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -265,18 +330,96 @@ export function SeedDetailPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors mb-3"
-            >
-              Place Order
-            </button>
-            <button
-              type="button"
-              className="w-full bg-white text-gray-700 py-3 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-            >
-              Contact Producer
-            </button>
+            {quote && user && accessToken ? (
+              <QuoteThreadPanel
+                quote={quote}
+                user={user}
+                accessToken={accessToken}
+                onUpdate={setQuote}
+                listedUnitPrice={seed.price}
+              />
+            ) : (
+              <>
+                {canRequestQuote && (
+                  <>
+                    {!showQuoteForm ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!user) {
+                            navigate("/login");
+                            return;
+                          }
+                          setShowQuoteForm(true);
+                        }}
+                        className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors mb-3 flex items-center justify-center gap-2 font-medium"
+                      >
+                        <FileText className="w-5 h-5" />
+                        Request Quote
+                      </button>
+                    ) : (
+                      <div className="mb-4 p-4 border border-green-200 rounded-lg bg-green-50">
+                        <p className="text-sm text-gray-700 mb-3">
+                          Request a quote for <strong>{quantity} kg</strong>. The producer
+                          will respond on SeedLink; you can confirm your order here once
+                          you agree on terms.
+                        </p>
+                        <textarea
+                          value={quoteNote}
+                          onChange={(e) => setQuoteNote(e.target.value)}
+                          placeholder="Optional: delivery location, timing, questions..."
+                          rows={3}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
+                          disabled={quoteBusy}
+                        />
+                        {quoteError && (
+                          <p className="text-sm text-red-600 mb-2">{quoteError}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={submitQuoteRequest}
+                            disabled={quoteBusy}
+                            className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm font-medium"
+                          >
+                            {quoteBusy ? "Sending..." : "Submit quote request"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowQuoteForm(false)}
+                            disabled={quoteBusy}
+                            className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 text-center mb-4">
+                      Estimated at list price: {total.toLocaleString()} RWF (final price
+                      from producer)
+                    </p>
+                  </>
+                )}
+                {!user && (
+                  <Link
+                    to="/login"
+                    className="w-full block text-center bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors mb-3 font-medium"
+                  >
+                    Sign in to request a quote
+                  </Link>
+                )}
+                {isOwnListing && (
+                  <p className="text-sm text-gray-600 text-center mb-4">
+                    This is your listing. Manage it from your{" "}
+                    <Link to="/producer/dashboard" className="text-green-600 hover:underline">
+                      producer dashboard
+                    </Link>
+                    .
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -413,7 +556,7 @@ export function SeedDetailPage() {
 
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow p-6 sticky top-24">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Producer contact</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Producer</h2>
 
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
                 <div className="bg-green-600 w-12 h-12 rounded-lg flex items-center justify-center">
@@ -465,30 +608,10 @@ export function SeedDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-3">
-                {seed.producerInfo?.phone ? (
-                  <a
-                    href={`tel:${seed.producerInfo.phone}`}
-                    className="flex items-center gap-2 text-gray-700 hover:text-green-600"
-                  >
-                    <Phone className="w-5 h-5" />
-                    <span>{seed.producerInfo.phone}</span>
-                  </a>
-                ) : (
-                  <p className="text-sm text-gray-500">Phone not provided</p>
-                )}
-                {seed.producerInfo?.email ? (
-                  <a
-                    href={`mailto:${seed.producerInfo.email}`}
-                    className="flex items-center gap-2 text-gray-700 hover:text-green-600"
-                  >
-                    <Mail className="w-5 h-5" />
-                    <span>{seed.producerInfo.email}</span>
-                  </a>
-                ) : (
-                  <p className="text-sm text-gray-500">Email not provided</p>
-                )}
-              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Use <strong>Request Quote</strong> to message this producer on SeedLink.
+                Quotes and orders stay on the platform so both sides have a clear record.
+              </p>
 
               {seed.delivery_details && (
                 <div className="mt-6 pt-6 border-t border-gray-200">

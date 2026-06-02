@@ -901,6 +901,405 @@ app.put("/orders/:id", async (c) => {
   }
 });
 
+// QUOTE REQUEST ENDPOINTS (on-platform buyer ↔ producer conversation)
+
+const getUserProfile = async (userId: string) => {
+  const data = await kv.get(`user:${userId}`);
+  return data ? parseStored(data) : null;
+};
+
+const displayName = (profile: any) =>
+  profile?.business_name || profile?.name || "SeedLink user";
+
+const canAccessQuote = (quote: any, userId: string) =>
+  quote.buyer_id === userId || quote.producer_id === userId;
+
+const ACTIVE_QUOTE_STATUSES = ["quote_requested", "quote_sent"];
+
+// Create quote request (buyer / farmer)
+app.post("/quote-requests", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const buyerProfile = await getUserProfile(user.id);
+    if (!buyerProfile) return c.json({ error: "Profile not found" }, 404);
+    if (buyerProfile.role === "producer") {
+      return c.json({ error: "Producers cannot request quotes on listings" }, 403);
+    }
+
+    const { seed_id, quantity, message } = await c.req.json();
+    if (!seed_id || !quantity) {
+      return c.json({ error: "Seed and quantity are required" }, 400);
+    }
+
+    const seedData = await kv.get(`seed:${seed_id}`);
+    if (!seedData) return c.json({ error: "Listing not found" }, 404);
+    const seed = parseStored(seedData);
+
+    if (seed.producer_id === user.id) {
+      return c.json({ error: "You cannot request a quote on your own listing" }, 403);
+    }
+
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return c.json({ error: "Invalid quantity" }, 400);
+    }
+    if (seed.minOrder && qty < seed.minOrder) {
+      return c.json({ error: `Minimum order is ${seed.minOrder} kg` }, 400);
+    }
+
+    const existing = (await kv.getByPrefix("quote:quote_"))
+      .map(parseStored)
+      .find(
+        (q) =>
+          q.seed_id === seed_id &&
+          q.buyer_id === user.id &&
+          ACTIVE_QUOTE_STATUSES.includes(q.status),
+      );
+    if (existing) {
+      return c.json({ error: "You already have an open quote for this listing", quote: existing }, 409);
+    }
+
+    const producerProfile = await getUserProfile(seed.producer_id);
+    const now = new Date().toISOString();
+    const initialMessage =
+      typeof message === "string" && message.trim()
+        ? message.trim()
+        : `Quote request for ${qty} kg.`;
+
+    const quote = {
+      id: `quote_${Date.now()}_${user.id}`,
+      seed_id,
+      producer_id: seed.producer_id,
+      buyer_id: user.id,
+      buyer_name: displayName(buyerProfile),
+      producer_name: seed.producer_name || displayName(producerProfile),
+      seed_category: seed.category || null,
+      seed_variety: seed.variety || null,
+      quantity: qty,
+      listed_unit_price: seed.price ?? 0,
+      status: "quote_requested",
+      messages: [
+        {
+          id: `msg_${Date.now()}`,
+          sender_id: user.id,
+          sender_role: "buyer",
+          sender_name: displayName(buyerProfile),
+          body: initialMessage,
+          created_at: now,
+        },
+      ],
+      producer_quote: null,
+      order_id: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    await kv.set(`quote:${quote.id}`, JSON.stringify(quote));
+    return c.json({ success: true, quote });
+  } catch (error) {
+    console.log("Create quote request error:", error);
+    return c.json({ error: "Failed to create quote request" }, 500);
+  }
+});
+
+// Active quote for buyer on a listing
+app.get("/quote-requests/seed/:seedId", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const seedId = c.req.param("seedId");
+    const quote = (await kv.getByPrefix("quote:quote_"))
+      .map(parseStored)
+      .find(
+        (q) =>
+          q.seed_id === seedId &&
+          q.buyer_id === user.id &&
+          ACTIVE_QUOTE_STATUSES.includes(q.status),
+      );
+
+    return c.json({ quote: quote || null });
+  } catch (error) {
+    console.log("Get seed quote error:", error);
+    return c.json({ error: "Failed to get quote" }, 500);
+  }
+});
+
+// Buyer's quote requests
+app.get("/quote-requests/my", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quotes = (await kv.getByPrefix("quote:quote_"))
+      .map(parseStored)
+      .filter((q) => q.buyer_id === user.id)
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime(),
+      );
+
+    return c.json({ quotes });
+  } catch (error) {
+    console.log("Get my quotes error:", error);
+    return c.json({ error: "Failed to get quotes" }, 500);
+  }
+});
+
+// Producer inbox
+app.get("/quote-requests/inbox", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quotes = (await kv.getByPrefix("quote:quote_"))
+      .map(parseStored)
+      .filter((q) => q.producer_id === user.id)
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime(),
+      );
+
+    return c.json({ quotes });
+  } catch (error) {
+    console.log("Get producer quotes error:", error);
+    return c.json({ error: "Failed to get quotes" }, 500);
+  }
+});
+
+// Get single quote
+app.get("/quote-requests/:id", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quoteId = c.req.param("id");
+    const quoteData = await kv.get(`quote:${quoteId}`);
+    if (!quoteData) return c.json({ error: "Quote not found" }, 404);
+
+    const quote = parseStored(quoteData);
+    if (!canAccessQuote(quote, user.id)) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    return c.json({ quote });
+  } catch (error) {
+    console.log("Get quote error:", error);
+    return c.json({ error: "Failed to get quote" }, 500);
+  }
+});
+
+// Add message to thread
+app.post("/quote-requests/:id/messages", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quoteId = c.req.param("id");
+    const quoteData = await kv.get(`quote:${quoteId}`);
+    if (!quoteData) return c.json({ error: "Quote not found" }, 404);
+
+    const quote = parseStored(quoteData);
+    if (!canAccessQuote(quote, user.id)) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    if (quote.status === "confirmed" || quote.status === "declined") {
+      return c.json({ error: "This quote is closed" }, 400);
+    }
+
+    const { body } = await c.req.json();
+    if (!body || typeof body !== "string" || !body.trim()) {
+      return c.json({ error: "Message is required" }, 400);
+    }
+
+    const profile = await getUserProfile(user.id);
+    const role = quote.buyer_id === user.id ? "buyer" : "producer";
+    const now = new Date().toISOString();
+    const msg = {
+      id: `msg_${Date.now()}`,
+      sender_id: user.id,
+      sender_role: role,
+      sender_name: displayName(profile),
+      body: body.trim(),
+      created_at: now,
+    };
+
+    quote.messages = [...(quote.messages || []), msg];
+    quote.updated_at = now;
+    await kv.set(`quote:${quoteId}`, JSON.stringify(quote));
+
+    return c.json({ success: true, quote });
+  } catch (error) {
+    console.log("Quote message error:", error);
+    return c.json({ error: "Failed to send message" }, 500);
+  }
+});
+
+// Producer sends quote
+app.put("/quote-requests/:id/respond", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quoteId = c.req.param("id");
+    const quoteData = await kv.get(`quote:${quoteId}`);
+    if (!quoteData) return c.json({ error: "Quote not found" }, 404);
+
+    const quote = parseStored(quoteData);
+    if (quote.producer_id !== user.id) {
+      return c.json({ error: "Only the producer can send a quote" }, 403);
+    }
+    if (!["quote_requested", "quote_sent"].includes(quote.status)) {
+      return c.json({ error: "Cannot update this quote" }, 400);
+    }
+
+    const { unit_price, message } = await c.req.json();
+    const unitPrice = Number(unit_price);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      return c.json({ error: "Valid unit price is required" }, 400);
+    }
+
+    const profile = await getUserProfile(user.id);
+    const now = new Date().toISOString();
+    const total = unitPrice * quote.quantity;
+    const responseNote =
+      typeof message === "string" && message.trim()
+        ? message.trim()
+        : `Quote: ${unitPrice.toLocaleString()} RWF/kg (${total.toLocaleString()} RWF total for ${quote.quantity} kg).`;
+
+    quote.producer_quote = {
+      unit_price: unitPrice,
+      total,
+      message: typeof message === "string" ? message.trim() : "",
+      sent_at: now,
+    };
+    quote.status = "quote_sent";
+    quote.messages = [
+      ...(quote.messages || []),
+      {
+        id: `msg_${Date.now()}`,
+        sender_id: user.id,
+        sender_role: "producer",
+        sender_name: displayName(profile),
+        body: responseNote,
+        created_at: now,
+      },
+    ];
+    quote.updated_at = now;
+
+    await kv.set(`quote:${quoteId}`, JSON.stringify(quote));
+    return c.json({ success: true, quote });
+  } catch (error) {
+    console.log("Respond to quote error:", error);
+    return c.json({ error: "Failed to send quote" }, 500);
+  }
+});
+
+// Buyer confirms quote → order on SeedLink
+app.put("/quote-requests/:id/confirm", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quoteId = c.req.param("id");
+    const quoteData = await kv.get(`quote:${quoteId}`);
+    if (!quoteData) return c.json({ error: "Quote not found" }, 404);
+
+    const quote = parseStored(quoteData);
+    if (quote.buyer_id !== user.id) {
+      return c.json({ error: "Only the buyer can confirm" }, 403);
+    }
+    if (quote.status !== "quote_sent" || !quote.producer_quote) {
+      return c.json({ error: "Waiting for producer quote before you can confirm" }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const order = {
+      id: `order_${Date.now()}_${user.id}`,
+      buyer_id: user.id,
+      producer_id: quote.producer_id,
+      seed_id: quote.seed_id,
+      seed_name: quote.seed_variety || quote.seed_category || "Seed listing",
+      producer_name: quote.producer_name,
+      quantity: quote.quantity,
+      unit_price: quote.producer_quote.unit_price,
+      total: quote.producer_quote.total,
+      total_price: quote.producer_quote.unit_price,
+      status: "confirmed",
+      quote_id: quoteId,
+      created_at: now,
+    };
+
+    await kv.set(`order:${order.id}`, JSON.stringify(order));
+
+    const buyerProfile = await getUserProfile(user.id);
+    quote.status = "confirmed";
+    quote.order_id = order.id;
+    quote.messages = [
+      ...(quote.messages || []),
+      {
+        id: `msg_${Date.now()}`,
+        sender_id: user.id,
+        sender_role: "buyer",
+        sender_name: displayName(buyerProfile),
+        body: `Order confirmed on SeedLink for ${quote.producer_quote.total.toLocaleString()} RWF.`,
+        created_at: now,
+      },
+    ];
+    quote.updated_at = now;
+    await kv.set(`quote:${quoteId}`, JSON.stringify(quote));
+
+    return c.json({ success: true, quote, order });
+  } catch (error) {
+    console.log("Confirm quote error:", error);
+    return c.json({ error: "Failed to confirm order" }, 500);
+  }
+});
+
+// Decline / cancel quote
+app.put("/quote-requests/:id/decline", async (c) => {
+  try {
+    const user = await verifyUser(c.req.header("Authorization"));
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const quoteId = c.req.param("id");
+    const quoteData = await kv.get(`quote:${quoteId}`);
+    if (!quoteData) return c.json({ error: "Quote not found" }, 404);
+
+    const quote = parseStored(quoteData);
+    if (!canAccessQuote(quote, user.id)) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    if (quote.status === "confirmed") {
+      return c.json({ error: "Cannot decline a confirmed order" }, 400);
+    }
+
+    const profile = await getUserProfile(user.id);
+    const now = new Date().toISOString();
+    quote.status = "declined";
+    quote.messages = [
+      ...(quote.messages || []),
+      {
+        id: `msg_${Date.now()}`,
+        sender_id: user.id,
+        sender_role: quote.buyer_id === user.id ? "buyer" : "producer",
+        sender_name: displayName(profile),
+        body: "Quote request closed.",
+        created_at: now,
+      },
+    ];
+    quote.updated_at = now;
+    await kv.set(`quote:${quoteId}`, JSON.stringify(quote));
+
+    return c.json({ success: true, quote });
+  } catch (error) {
+    console.log("Decline quote error:", error);
+    return c.json({ error: "Failed to decline quote" }, 500);
+  }
+});
+
 // FAVORITES ENDPOINTS
 
 // Add favorite producer

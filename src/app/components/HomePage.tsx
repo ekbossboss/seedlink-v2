@@ -1,6 +1,20 @@
 import { Link } from "react-router";
 import { ShieldCheck, Users, Truck, Search, ChevronRight } from "lucide-react";
 
+/** Unsplash — potato crop & harvest imagery aligned with SeedLink’s marketplace story */
+const HOME_IMAGES = {
+  /** Farmers discover certified seed: healthy potato plants in the field */
+  hero: {
+    src: "https://images.unsplash.com/photo-1741003188234-1d031351168c?w=1200&h=800&fit=crop&q=80",
+    alt: "Rows of potato plants growing in a green field",
+  },
+  /** Producers list quality seed: fresh potatoes ready for market */
+  producers: {
+    src: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=1200&h=900&fit=crop&q=80",
+    alt: "Freshly harvested potatoes sorted for sale",
+  },
+} as const;
+
 export function HomePage() {
   return (
     <div className="w-full">
@@ -34,10 +48,15 @@ export function HomePage() {
             </div>
             <div className="bg-white rounded-2xl shadow-xl p-8">
               <img
-                src="https://images.unsplash.com/photo-1592921870789-04563d55041c?w=600&h=400&fit=crop"
-                alt="Potato field in Rwanda"
+                src={HOME_IMAGES.hero.src}
+                alt={HOME_IMAGES.hero.alt}
                 className="w-full h-80 object-cover rounded-lg"
+                loading="eager"
+                decoding="async"
               />
+              <p className="mt-3 text-sm text-gray-500 text-center">
+                Quality seed starts in the field — browse verified listings on SeedLink.
+              </p>
             </div>
           </div>
         </div>
@@ -101,9 +120,11 @@ export function HomePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
               <img
-                src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=600&h=400&fit=crop"
-                alt="Farmer inspecting potato seeds"
+                src={HOME_IMAGES.producers.src}
+                alt={HOME_IMAGES.producers.alt}
                 className="w-full h-96 object-cover rounded-2xl shadow-xl"
+                loading="lazy"
+                decoding="async"
               />
             </div>
             <div>
