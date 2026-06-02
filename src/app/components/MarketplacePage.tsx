@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router";
-import { Search, Filter, MapPin, Star, ChevronRight, Sprout } from "lucide-react";
+import { Search, Filter, MapPin, Star, ChevronRight, Sprout, Truck } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
 import type { MarketplaceSeed } from "../types/marketplace";
+import { getSeedCategoryLabel } from "../lib/seedCategories";
 
 async function fetchMarketplaceListings(): Promise<MarketplaceSeed[]> {
   const response = await fetch(`${serverUrl}/seeds`);
@@ -69,6 +70,7 @@ export function MarketplacePage() {
         const matchesSearch =
           !query ||
           seed.variety?.toLowerCase().includes(query) ||
+          getSeedCategoryLabel(seed.category).toLowerCase().includes(query) ||
           seed.producer_name?.toLowerCase().includes(query) ||
           (seed.location?.toLowerCase().includes(query) ?? false);
         const matchesVariety =
@@ -240,7 +242,7 @@ export function MarketplacePage() {
                             {primaryImage(seed) ? (
                               <img
                                 src={primaryImage(seed)!}
-                                alt={seed.variety}
+                                alt={getSeedCategoryLabel(seed.category)}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
                             ) : (
@@ -263,9 +265,14 @@ export function MarketplacePage() {
                             className="hover:text-green-700"
                           >
                             <h3 className="font-bold text-lg text-gray-900 mb-1">
-                              {seed.variety}
+                              {getSeedCategoryLabel(seed.category)}
                             </h3>
                           </Link>
+                          {seed.variety && (
+                            <p className="text-sm text-gray-600 mb-1">
+                              Variety: {seed.variety}
+                            </p>
+                          )}
                           {seed.producer_id ? (
                             <Link
                               to={`/producer/${seed.producer_id}`}
@@ -294,9 +301,15 @@ export function MarketplacePage() {
                           )}
 
                           {seed.location && (
-                            <div className="flex items-center gap-1 text-sm text-gray-600 mb-4">
-                              <MapPin className="w-4 h-4 flex-shrink-0" />
+                            <div className="flex items-start gap-1 text-sm text-gray-600 mb-2">
+                              <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
                               <span>{seed.location}</span>
+                            </div>
+                          )}
+                          {seed.delivery_details && (
+                            <div className="flex items-start gap-1 text-sm text-gray-600 mb-4 line-clamp-2">
+                              <Truck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                              <span>{seed.delivery_details}</span>
                             </div>
                           )}
 

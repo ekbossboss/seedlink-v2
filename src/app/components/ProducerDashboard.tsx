@@ -3,6 +3,42 @@ import { Plus, Edit, Trash2, Package, ShoppingBag, TrendingUp, Eye } from "lucid
 import { useSearchParams, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { serverUrl } from "../lib/supabase";
+import { RWANDA_DISTRICTS } from "../lib/rwandaDistricts";
+import { SEED_CATEGORIES, getSeedCategoryLabel } from "../lib/seedCategories";
+
+const emptyListingForm = () => ({
+  variety: "",
+  category: "",
+  price: "",
+  available: "",
+  minOrder: "",
+  location: "",
+  locationDetail: "",
+  deliveryDetails: "",
+  description: "",
+  features: [] as string[],
+});
+
+const formatListingLocation = (district: string, detail: string) => {
+  const base = district.trim();
+  const extra = detail.trim();
+  if (!base) return "";
+  return extra ? `${base}, ${extra}` : base;
+};
+
+const parseStoredLocation = (stored?: string | null) => {
+  if (!stored) return { location: "", locationDetail: "" };
+  const district = RWANDA_DISTRICTS.find(
+    (d) => stored === d || stored.startsWith(`${d},`),
+  );
+  if (district) {
+    return {
+      location: district,
+      locationDetail: stored.slice(district.length).replace(/^,\s*/, ""),
+    };
+  }
+  return { location: "", locationDetail: stored };
+};
 
 export function ProducerDashboard() {
   const { user, accessToken } = useAuth();
@@ -17,15 +53,7 @@ export function ProducerDashboard() {
   const [error, setError] = useState<string | null>(null);
   
   // Form state
-  const [newListing, setNewListing] = useState({
-    variety: "",
-    category: "",
-    price: "",
-    available: "",
-    minOrder: "",
-    description: "",
-    features: [] as string[],
-  });
+  const [newListing, setNewListing] = useState(emptyListingForm);
   const [newFeature, setNewFeature] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -112,8 +140,10 @@ export function ProducerDashboard() {
     if (!newListing.price) missing.push('Price per kg');
     if (!newListing.available) missing.push('Available quantity');
     if (!newListing.minOrder) missing.push('Minimum order');
+    if (!newListing.location) missing.push('Seed location (district)');
+    if (!newListing.deliveryDetails.trim()) missing.push('Delivery details');
     if (newListing.features.length === 0) missing.push('Key features (add at least one)');
-    if (files.length === 0) missing.push('Photos (add at least one)');
+    if (files.length === 0 && existingImages.length === 0) missing.push('Photos (add at least one)');
 
     if (missing.length > 0) {
       alert('Please provide the following required fields:\n- ' + missing.join('\n- '));
@@ -156,6 +186,12 @@ export function ProducerDashboard() {
         }
       }
 
+      const listingLocation = formatListingLocation(
+        newListing.location,
+        newListing.locationDetail,
+      );
+      const deliveryDetails = newListing.deliveryDetails.trim();
+
       if (editingSeedId) {
         // Update existing listing
         const combinedImages = [...existingImages, ...imageUrls];
@@ -171,6 +207,8 @@ export function ProducerDashboard() {
             price: parseFloat(newListing.price),
             available: parseFloat(newListing.available),
             minOrder: parseFloat(newListing.minOrder),
+            location: listingLocation,
+            delivery_details: deliveryDetails,
             description: newListing.description,
             keyFeatures: newListing.features,
             features: newListing.features,
@@ -199,6 +237,8 @@ export function ProducerDashboard() {
             price: parseFloat(newListing.price),
             available: parseFloat(newListing.available),
             minOrder: parseFloat(newListing.minOrder),
+            location: listingLocation,
+            delivery_details: deliveryDetails,
             description: newListing.description,
             keyFeatures: newListing.features,
             features: newListing.features,
@@ -213,15 +253,7 @@ export function ProducerDashboard() {
 
         alert("Seed listing created successfully!");
       }
-      setNewListing({
-        variety: "",
-        category: "",
-        price: "",
-        available: "",
-        minOrder: "",
-        description: "",
-        features: [],
-      });
+      setNewListing(emptyListingForm());
       setNewFeature("");
       
       // Refresh seeds list
@@ -254,6 +286,7 @@ export function ProducerDashboard() {
   };
 
   const handleEdit = (seed: any) => {
+    const { location, locationDetail } = parseStoredLocation(seed.location);
     setEditingSeedId(seed.id);
     setActiveTab('add');
     setNewListing({
@@ -262,6 +295,9 @@ export function ProducerDashboard() {
       price: String(seed.price || ''),
       available: String(seed.available || ''),
       minOrder: String(seed.minOrder || ''),
+      location,
+      locationDetail,
+      deliveryDetails: seed.delivery_details || '',
       description: seed.description || '',
       features: seed.features || seed.keyFeatures || [],
     });
@@ -456,7 +492,12 @@ export function ProducerDashboard() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-lg font-semibold text-gray-900">{seed.variety}</h3>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {getSeedCategoryLabel(seed.category)}
+                            </h3>
+                            {seed.category && seed.variety && (
+                              <p className="text-sm text-gray-500">Variety: {seed.variety}</p>
+                            )}
                             <span
                               className={`px-2 py-1 text-xs rounded-full ${
                                 seed.status === "active"
@@ -482,8 +523,23 @@ export function ProducerDashboard() {
                               <p className="font-semibold text-gray-900">{seed.minOrder || 'N/A'} kg</p>
                             </div>
                           </div>
+                          {(seed.location || seed.delivery_details) && (
+                            <div className="text-sm text-gray-600 mt-3 space-y-1">
+                              {seed.location && (
+                                <p>
+                                  <span className="text-gray-500">Location:</span> {seed.location}
+                                </p>
+                              )}
+                              {seed.delivery_details && (
+                                <p>
+                                  <span className="text-gray-500">Delivery:</span>{" "}
+                                  {seed.delivery_details}
+                                </p>
+                              )}
+                            </div>
+                          )}
                           {seed.description && (
-                            <p className="text-sm text-gray-600 mt-4">{seed.description}</p>
+                            <p className="text-sm text-gray-600 mt-2">{seed.description}</p>
                           )}
                         </div>
 
@@ -581,7 +637,9 @@ export function ProducerDashboard() {
 
             {activeTab === "add" && (
               <div className="max-w-2xl">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Add New Seed Listing</h2>
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">
+                  {editingSeedId ? "Edit Seed Listing" : "Add New Seed Listing"}
+                </h2>
 
                 <div className="space-y-6">
                   <div>
@@ -617,12 +675,11 @@ export function ProducerDashboard() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                     >
                       <option value="">Select category</option>
-                      <option value="Vegetable">Mini tubers (G1)</option>
-                      <option value="Fruit">Apical cuttings(G1)</option>
-                      <option value="Grain">Pre basic seed (G2)</option>
-                      <option value="Herb">Basic seed (G3)</option>
-                      <option value="Flower">Certified seed (G4)</option>
-                      <option value="Other">Other</option>
+                      {SEED_CATEGORIES.map((cat) => (
+                        <option key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -671,6 +728,59 @@ export function ProducerDashboard() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                       placeholder="5000"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Seed location (district) *
+                    </label>
+                    <select
+                      name="location"
+                      value={newListing.location}
+                      onChange={handleNewListingChange}
+                      disabled={submitting}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
+                    >
+                      <option value="">Select district where seeds are stored</option>
+                      {RWANDA_DISTRICTS.map((district) => (
+                        <option key={district} value={district}>
+                          {district}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Area / sector (optional)
+                    </label>
+                    <input
+                      type="text"
+                      name="locationDetail"
+                      value={newListing.locationDetail}
+                      onChange={handleNewListingChange}
+                      disabled={submitting}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
+                      placeholder="e.g. Kinigi sector, near main road"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Delivery details *
+                    </label>
+                    <textarea
+                      name="deliveryDetails"
+                      value={newListing.deliveryDetails}
+                      onChange={handleNewListingChange}
+                      disabled={submitting}
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
+                      placeholder="e.g. Delivery available across Rwanda. Pickup in Musanze. 2–3 day lead time for Kigali."
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Explain where you can deliver, pickup options, and typical timelines.
+                    </p>
                   </div>
 
                   <div>
@@ -800,15 +910,7 @@ export function ProducerDashboard() {
                         if (editingSeedId) {
                           setEditingSeedId(null);
                           setExistingImages([]);
-                          setNewListing({
-                            variety: "",
-                            category: "",
-                            price: "",
-                            available: "",
-                            minOrder: "",
-                            description: "",
-                            features: [] as string[],
-                          });
+                          setNewListing(emptyListingForm());
                         }
                       }}
                       disabled={submitting}

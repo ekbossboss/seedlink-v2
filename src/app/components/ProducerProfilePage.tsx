@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { ArrowLeft, Star, MapPin, ShieldCheck, Phone, Mail } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
+import { getSeedCategoryLabel } from "../lib/seedCategories";
 
 export function ProducerProfilePage() {
   const { id } = useParams();
@@ -201,8 +202,16 @@ export function ProducerProfilePage() {
                           />
                         </div>
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900">{seed.variety || seed.name}</h3>
+                          <h3 className="font-semibold text-gray-900">
+                            {getSeedCategoryLabel(seed.category)}
+                          </h3>
+                          {seed.variety && (
+                            <p className="text-sm text-gray-500 mt-1">Variety: {seed.variety}</p>
+                          )}
                           <p className="text-sm text-gray-500 mt-1">{seed.location || 'Location unknown'}</p>
+                          {seed.delivery_details && (
+                            <p className="text-sm text-gray-500 mt-1 line-clamp-2">{seed.delivery_details}</p>
+                          )}
                           <div className="mt-3 flex items-center justify-between text-sm text-gray-700">
                             <span>{seed.price?.toLocaleString() ?? 0} RWF/kg</span>
                             <span>{seed.available ?? 0} kg</span>

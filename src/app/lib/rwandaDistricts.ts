@@ -1,0 +1,18 @@
+export const RWANDA_DISTRICTS = [
+  "Kigali",
+  "Nyarugenge",
+  "Gasabo",
+  "Kicukiro",
+  "Musanze",
+  "Rubavu",
+  "Burera",
+  "Gicumbi",
+  "Rulindo",
+  "Karongi",
+  "Rusizi",
+  "Nyamasheke",
+  "Huye",
+  "Nyanza",
+  "Nyagatare",
+  "Rwamagana",
+] as const;

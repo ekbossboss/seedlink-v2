@@ -508,16 +508,27 @@ app.post("/seeds", async (c) => {
     }
 
     const seedData = await c.req.json();
+    const location = typeof seedData.location === "string" ? seedData.location.trim() : "";
+    const deliveryDetails =
+      typeof seedData.delivery_details === "string" ? seedData.delivery_details.trim() : "";
+
+    if (!location) {
+      return c.json({ error: "Seed location is required" }, 400);
+    }
+    if (!deliveryDetails) {
+      return c.json({ error: "Delivery details are required" }, 400);
+    }
 
     const seed = {
       id: `seed_${Date.now()}_${user.id}`,
       producer_id: user.id,
       producer_name: profile.business_name || profile.name,
-      location: profile.district || profile.address || null,
       unit: 'kg',
       created_at: new Date().toISOString(),
       status: 'active',
       ...seedData,
+      location,
+      delivery_details: deliveryDetails,
     };
 
     await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
@@ -727,7 +738,7 @@ app.put("/seeds/:id", async (c) => {
       return c.json({ error: 'Seed not found' }, 404);
     }
 
-    const seed = JSON.parse(seedData);
+    const seed = parseStored(seedData);
 
     // Check if user owns this seed
     if (seed.producer_id !== user.id) {
@@ -735,6 +746,22 @@ app.put("/seeds/:id", async (c) => {
     }
 
     const updates = await c.req.json();
+    if (updates.location !== undefined) {
+      const location = typeof updates.location === "string" ? updates.location.trim() : "";
+      if (!location) {
+        return c.json({ error: "Seed location is required" }, 400);
+      }
+      updates.location = location;
+    }
+    if (updates.delivery_details !== undefined) {
+      const deliveryDetails =
+        typeof updates.delivery_details === "string" ? updates.delivery_details.trim() : "";
+      if (!deliveryDetails) {
+        return c.json({ error: "Delivery details are required" }, 400);
+      }
+      updates.delivery_details = deliveryDetails;
+    }
+
     const updatedSeed = { ...seed, ...updates, id: seedId, producer_id: user.id };
 
     await kv.set(`seed:${seedId}`, JSON.stringify(updatedSeed));
