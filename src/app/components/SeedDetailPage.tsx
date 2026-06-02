@@ -151,8 +151,7 @@ export function SeedDetailPage() {
   const minOrder = seed.minOrder ?? 1;
   const total = quantity * (seed.price || 0);
   const isOwnListing = user?.id === seed.producer_id;
-  const canRequestQuote =
-    user && !isOwnListing && user.role !== "producer" && user.role !== "admin" && user.role !== "super_admin";
+  const canRequestQuote = !!user && !isOwnListing;
 
   const submitQuoteRequest = async () => {
     if (!accessToken || !seed) return;

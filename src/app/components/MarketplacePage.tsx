@@ -120,115 +120,99 @@ export function MarketplacePage() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          <aside className="lg:w-64 flex-shrink-0">
-            <div className="bg-white rounded-lg shadow p-6 sticky top-24">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-900">Filters</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="lg:hidden"
-                  aria-label="Toggle filters"
-                >
-                  <Filter className="w-5 h-5" />
-                </button>
-              </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-gray-600">
+          {!loading && (
+            <span>
+              {filteredSeeds.length} {filteredSeeds.length === 1 ? "listing" : "listings"}
+            </span>
+          )}
+          {(searchQuery || selectedVariety !== "all" || selectedDistrict !== "all") && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-green-600 hover:text-green-700"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
 
-              <div className={`space-y-6 ${showFilters ? "block" : "hidden lg:block"}`}>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Variety
-                  </label>
-                  <select
-                    value={selectedVariety}
-                    onChange={(e) => setSelectedVariety(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    {varieties.map((v) => (
-                      <option
-                        key={v}
-                        value={v === "All Varieties" ? "all" : v}
-                      >
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Location
-                  </label>
-                  <select
-                    value={selectedDistrict}
-                    onChange={(e) => setSelectedDistrict(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    {districts.map((d) => (
-                      <option key={d} value={d === "All Districts" ? "all" : d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Sort By
-                  </label>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="newest">Newest Listings</option>
-                    <option value="rating">Highest Rated Producer</option>
-                    <option value="price-low">Price: Low to High</option>
-                    <option value="price-high">Price: High to Low</option>
-                  </select>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="w-full text-sm text-green-600 hover:text-green-700"
-                >
-                  Clear all filters
-                </button>
-              </div>
-            </div>
-          </aside>
-
-          <main className="flex-1">
-            <div className="bg-white rounded-lg shadow p-4 mb-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search varieties, producers, or locations..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
+        <div className="mb-4 sticky top-16 z-10 bg-gray-50/95 backdrop-blur-sm py-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] sm:max-w-xs">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search..."
+                className="w-full h-8 pl-7 pr-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 focus:border-green-500 bg-white"
+              />
             </div>
 
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <p className="text-gray-600">Loading marketplace listings...</p>
-              </div>
-            ) : (
-              <>
-                <div className="mb-4 text-sm text-gray-600">
-                  {filteredSeeds.length}{" "}
-                  {filteredSeeds.length === 1 ? "listing" : "listings"} from approved
-                  producers
-                </div>
+            <div
+              className={`flex flex-wrap items-center gap-2 ${
+                showFilters ? "flex" : "hidden sm:flex"
+              }`}
+            >
+              <select
+                value={selectedVariety}
+                onChange={(e) => setSelectedVariety(e.target.value)}
+                aria-label="Variety"
+                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+              >
+                {varieties.map((v) => (
+                  <option key={v} value={v === "All Varieties" ? "all" : v}>
+                    {v === "All Varieties" ? "All varieties" : v}
+                  </option>
+                ))}
+              </select>
 
-                {filteredSeeds.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <select
+                value={selectedDistrict}
+                onChange={(e) => setSelectedDistrict(e.target.value)}
+                aria-label="Location"
+                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+              >
+                {districts.map((d) => (
+                  <option key={d} value={d === "All Districts" ? "all" : d}>
+                    {d === "All Districts" ? "All locations" : d}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Sort by"
+                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[8.5rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+              >
+                <option value="newest">Newest</option>
+                <option value="rating">Top rated</option>
+                <option value="price-low">Price ↑</option>
+                <option value="price-high">Price ↓</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className="sm:hidden h-8 px-2 inline-flex items-center gap-1 text-xs text-gray-600 border border-gray-300 rounded-md bg-white"
+              aria-label="Toggle filters"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              Filters
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <p className="text-sm text-gray-600">Loading listings...</p>
+          </div>
+        ) : filteredSeeds.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredSeeds.map((seed) => (
                       <article
                         key={seed.id}
@@ -339,34 +323,28 @@ export function MarketplacePage() {
                       </article>
                     ))}
                   </div>
-                ) : (
-                  <div className="bg-white rounded-lg shadow p-12 text-center">
-                    <Sprout className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-900 font-medium mb-2">
-                      {seeds.length === 0
-                        ? "No listings yet"
-                        : "No listings match your filters"}
-                    </p>
-                    <p className="text-gray-600 mb-4">
-                      {seeds.length === 0
-                        ? "Approved producers can add potato seed listings from their dashboard. Listings appear here for everyone."
-                        : "Try adjusting your search or filters."}
-                    </p>
-                    {seeds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="text-green-600 hover:text-green-700 font-medium"
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
+        ) : (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+            <Sprout className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-900 font-medium mb-1 text-sm">
+              {seeds.length === 0 ? "No listings yet" : "No listings match your filters"}
+            </p>
+            <p className="text-gray-600 text-sm mb-3">
+              {seeds.length === 0
+                ? "Approved producers can add listings from their dashboard."
+                : "Try adjusting your search or filters."}
+            </p>
+            {seeds.length > 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-sm text-green-600 hover:text-green-700 font-medium"
+              >
+                Clear filters
+              </button>
             )}
-          </main>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

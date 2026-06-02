@@ -16,7 +16,6 @@ import { MyOrdersPage } from "./components/MyOrdersPage";
 import { FavoriteSellersPage } from "./components/FavoriteSellersPage";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { ProfilePage } from "./components/ProfilePage";
-import { InitAdminPage } from "./components/InitAdminPage";
 import { InitSuperAdminPage } from "./components/InitSuperAdminPage";
 import { TestServerPage } from "./components/TestServerPage";
 
@@ -28,10 +27,6 @@ export const router = createBrowserRouter([
   {
     path: "/init-super-admin",
     Component: InitSuperAdminPage,
-  },
-  {
-    path: "/init-admin",
-    Component: InitAdminPage,
   },
   {
     path: "/login",

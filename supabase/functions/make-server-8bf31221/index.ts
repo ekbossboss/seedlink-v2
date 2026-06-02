@@ -77,6 +77,11 @@ const parseStored = (value: unknown) => {
   return value;
 };
 
+const hasSuperAdmin = async () => {
+  const users = await kv.getByPrefix("user:");
+  return users.some((userData) => parseStored(userData)?.role === "super_admin");
+};
+
 const isApprovedProducer = (profile: any) => {
   return (
     profile?.role === "producer" &&
@@ -137,9 +142,24 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
+// Check whether super admin setup is still available (ONE-TIME SETUP)
+app.get("/init-super-admin/status", async (c) => {
+  try {
+    const superAdminExists = await hasSuperAdmin();
+    return c.json({ available: !superAdminExists, super_admin_exists: superAdminExists });
+  } catch (error) {
+    console.log("Init super admin status error:", error);
+    return c.json({ error: "Failed to check super admin status" }, 500);
+  }
+});
+
 // Initialize first super admin (ONE-TIME SETUP)
 app.post("/init-super-admin", async (c) => {
   try {
+    if (await hasSuperAdmin()) {
+      return c.json({ error: "A Super Admin account already exists. This setup page is no longer available." }, 403);
+    }
+
     const { email, password, name } = await c.req.json();
 
     if (!email || !password || !name) {
@@ -177,49 +197,6 @@ app.post("/init-super-admin", async (c) => {
   } catch (error) {
     console.log('Init super admin error:', error);
     return c.json({ error: 'Failed to create super admin' }, 500);
-  }
-});
-
-// Initialize first admin (ONE-TIME SETUP)
-app.post("/init-admin", async (c) => {
-  try {
-    const { email, password, name } = await c.req.json();
-
-    if (!email || !password || !name) {
-      return c.json({ error: "Email, password, and name are required" }, 400);
-    }
-
-    const supabase = getSupabaseClient();
-
-    // Create admin user with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { name },
-    });
-
-    if (authError) {
-      console.log('Auth admin creation error:', authError);
-      return c.json({ error: authError.message }, 400);
-    }
-
-    // Store admin profile in KV store
-    const adminProfile = {
-      id: authData.user.id,
-      email,
-      name,
-      role: 'admin',
-      created_at: new Date().toISOString(),
-    };
-
-    await kv.set(`user:${authData.user.id}`, JSON.stringify(adminProfile));
-    await kv.set(`user_email:${email}`, authData.user.id);
-
-    return c.json({ success: true, message: 'Admin account created successfully', user: adminProfile });
-  } catch (error) {
-    console.log('Init admin error:', error);
-    return c.json({ error: 'Failed to create admin' }, 500);
   }
 });
 
@@ -924,9 +901,6 @@ app.post("/quote-requests", async (c) => {
 
     const buyerProfile = await getUserProfile(user.id);
     if (!buyerProfile) return c.json({ error: "Profile not found" }, 404);
-    if (buyerProfile.role === "producer") {
-      return c.json({ error: "Producers cannot request quotes on listings" }, 403);
-    }
 
     const { seed_id, quantity, message } = await c.req.json();
     if (!seed_id || !quantity) {
@@ -939,6 +913,14 @@ app.post("/quote-requests", async (c) => {
 
     if (seed.producer_id === user.id) {
       return c.json({ error: "You cannot request a quote on your own listing" }, 403);
+    }
+    if (seed.status !== "active") {
+      return c.json({ error: "This listing is not available" }, 400);
+    }
+
+    const listingProducer = await getUserProfile(seed.producer_id);
+    if (!listingProducer || !isApprovedProducer(listingProducer)) {
+      return c.json({ error: "This listing is not available from an approved producer" }, 400);
     }
 
     const qty = Number(quantity);

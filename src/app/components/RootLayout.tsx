@@ -125,6 +125,14 @@ export function RootLayout() {
                           Profile
                         </Link>
                         <Link
+                          to="/my-orders"
+                          className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-50"
+                          onClick={() => setProfileDropdownOpen(false)}
+                        >
+                          <ShoppingBag className="w-4 h-4" />
+                          My Orders & Quotes
+                        </Link>
+                        <Link
                           to="/profile?tab=settings"
                           className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-50"
                           onClick={() => setProfileDropdownOpen(false)}
@@ -195,6 +203,14 @@ export function RootLayout() {
                         >
                           <UserCircle className="w-4 h-4" />
                           Profile
+                        </Link>
+                        <Link
+                          to="/my-orders"
+                          className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-50"
+                          onClick={() => setProfileDropdownOpen(false)}
+                        >
+                          <ShoppingBag className="w-4 h-4" />
+                          My Orders & Quotes
                         </Link>
                         <Link
                           to="/profile?tab=settings"
@@ -366,6 +382,9 @@ export function RootLayout() {
                     <Link to="/producer/dashboard" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
                       Producer Dashboard
                     </Link>
+                    <Link to="/my-orders" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
+                      My Orders & Quotes
+                    </Link>
                     <Link to="/profile" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
                       Profile
                     </Link>
@@ -383,6 +402,9 @@ export function RootLayout() {
                     </Link>
                     <Link to="/admin" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
                       {adminDashboardLabel}
+                    </Link>
+                    <Link to="/my-orders" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
+                      My Orders & Quotes
                     </Link>
                     <Link to="/profile" className="text-gray-700 hover:text-green-600" onClick={() => setMobileMenuOpen(false)}>
                       Profile
