@@ -3,11 +3,12 @@ import { useParams, Link } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { ArrowLeft, Star, MapPin, ShieldCheck, Phone, Mail } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
-import { getSeedCategoryLabel } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 
 export function ProducerProfilePage() {
   const { id } = useParams();
   const { accessToken, user } = useAuth();
+  const { getCategoryLabel } = usePlatformCatalog();
   const [producer, setProducer] = useState<any | null>(null);
   const [seeds, setSeeds] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -203,7 +204,7 @@ export function ProducerProfilePage() {
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900">
-                            {getSeedCategoryLabel(seed.category)}
+                            {getCategoryLabel(seed.category)}
                           </h3>
                           {seed.variety && (
                             <p className="text-sm text-gray-500 mt-1">Variety: {seed.variety}</p>

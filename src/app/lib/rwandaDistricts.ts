@@ -1,18 +1,4 @@
-export const RWANDA_DISTRICTS = [
-  "Kigali",
-  "Nyarugenge",
-  "Gasabo",
-  "Kicukiro",
-  "Musanze",
-  "Rubavu",
-  "Burera",
-  "Gicumbi",
-  "Rulindo",
-  "Karongi",
-  "Rusizi",
-  "Nyamasheke",
-  "Huye",
-  "Nyanza",
-  "Nyagatare",
-  "Rwamagana",
-] as const;
+import { DEFAULT_SUPPORTED_DISTRICTS } from "./platformCatalogDefaults";
+
+/** @deprecated Use usePlatformCatalog().supportedDistricts */
+export const RWANDA_DISTRICTS = DEFAULT_SUPPORTED_DISTRICTS;

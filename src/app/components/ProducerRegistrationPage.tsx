@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 import { serverUrl } from "../lib/supabase";
 import { Upload, CheckCircle, FileText, MapPin, Phone, Mail, Building } from "lucide-react";
 
 export function ProducerRegistrationPage() {
   const { user, accessToken } = useAuth();
+  const { supportedDistricts } = usePlatformCatalog();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -28,16 +30,26 @@ export function ProducerRegistrationPage() {
 
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [registrationClosed, setRegistrationClosed] = useState(false);
 
   useEffect(() => {
     if (!user) {
-      // Redirect to signup if not logged in
       navigate('/signup');
     } else if (user.role === 'producer') {
-      // Already a producer, redirect to dashboard
       navigate('/producer/dashboard');
     }
   }, [user, navigate]);
+
+  useEffect(() => {
+    fetch(`${serverUrl}/platform/public-status`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.producer_registration_open === false) {
+          setRegistrationClosed(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -108,15 +120,29 @@ export function ProducerRegistrationPage() {
     }
   };
 
-  const districts = [
-    "Kigali", "Nyarugenge", "Gasabo", "Kicukiro", "Musanze", "Rubavu",
-    "Burera", "Gicumbi", "Rulindo", "Karongi", "Rusizi", "Nyamasheke"
-  ];
-
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-600">Redirecting to signup...</p>
+      </div>
+    );
+  }
+
+  if (registrationClosed) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center">
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Registration temporarily closed</h1>
+          <p className="text-gray-600 mb-6">
+            Producer registration is not accepting new applications at this time. Please check back later.
+          </p>
+          <button
+            onClick={() => navigate('/marketplace')}
+            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            Back to marketplace
+          </button>
+        </div>
       </div>
     );
   }
@@ -250,7 +276,7 @@ export function ProducerRegistrationPage() {
                       required
                     >
                       <option value="">Select district</option>
-                      {districts.map((d) => (
+                      {supportedDistricts.map((d) => (
                         <option key={d} value={d}>
                           {d}
                         </option>

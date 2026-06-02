@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { MessageSquare, Send } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
 import type { QuoteRequest } from "../types/quotes";
-import { getSeedCategoryLabel } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 
 type AuthUser = {
   id: string;
@@ -33,6 +33,7 @@ export function QuoteThreadPanel({
   onUpdate,
   listedUnitPrice,
 }: QuoteThreadPanelProps) {
+  const { getCategoryLabel } = usePlatformCatalog();
   const [message, setMessage] = useState("");
   const [unitPrice, setUnitPrice] = useState(
     quote.producer_quote?.unit_price?.toString() ||
@@ -45,7 +46,7 @@ export function QuoteThreadPanel({
 
   const isBuyer = user.id === quote.buyer_id;
   const isProducer = user.id === quote.producer_id;
-  const listingLabel = getSeedCategoryLabel(quote.seed_category);
+  const listingLabel = getCategoryLabel(quote.seed_category);
 
   const authHeaders = {
     Authorization: `Bearer ${accessToken}`,

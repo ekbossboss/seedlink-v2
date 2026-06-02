@@ -3,6 +3,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router";
 import { serverUrl } from "../lib/supabase";
 import { SuperAdminUserManagement } from "./SuperAdminUserManagement";
+import { AdminSettingsPanel } from "./AdminSettingsPanel";
+import type { AdminPrefs, PlatformSettings } from "../types/adminSettings";
 import {
   LayoutDashboard,
   UserCheck,
@@ -32,6 +34,8 @@ interface AccessRequest {
   status: 'pending' | 'approved' | 'rejected';
   submitted_at: string;
   reviewed_at?: string;
+  reviewed_by?: string;
+  reason?: string;
 }
 
 interface User {
@@ -65,6 +69,13 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<AccessRequest | null>(null);
   const [accessRequestsError, setAccessRequestsError] = useState<string | null>(null);
+  const [adminPrefs, setAdminPrefs] = useState<AdminPrefs | null>(null);
+  const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectRequestId, setRejectRequestId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   useEffect(() => {
     if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
@@ -75,11 +86,18 @@ export function AdminDashboard() {
     fetchData();
   }, [user, accessToken]);
 
+  useEffect(() => {
+    if (adminPrefs?.default_landing_tab && !prefsLoaded) {
+      setActiveTab(adminPrefs.default_landing_tab);
+      setPrefsLoaded(true);
+    }
+  }, [adminPrefs, prefsLoaded]);
+
   const fetchData = async () => {
     setAccessRequestsError(null);
 
     try {
-      const [requestsRes, usersRes, statsRes] = await Promise.all([
+      const [requestsRes, usersRes, statsRes, prefsRes, platformRes] = await Promise.all([
         fetch(`${serverUrl}/access-requests`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         }),
@@ -87,6 +105,12 @@ export function AdminDashboard() {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         }),
         fetch(`${serverUrl}/admin/stats`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        }),
+        fetch(`${serverUrl}/admin/settings/prefs`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        }),
+        fetch(`${serverUrl}/admin/settings/platform`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         }),
       ]);
@@ -110,6 +134,16 @@ export function AdminDashboard() {
       if (statsRes.ok) {
         const data = await statsRes.json();
         setStats(data.stats);
+      }
+
+      if (prefsRes.ok) {
+        const data = await prefsRes.json();
+        setAdminPrefs(data.prefs);
+      }
+
+      if (platformRes.ok) {
+        const data = await platformRes.json();
+        setPlatformSettings(data.platform);
       }
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
@@ -139,28 +173,46 @@ export function AdminDashboard() {
     }
   };
 
-  const handleRejectRequest = async (requestId: string) => {
-    const reason = prompt('Please provide a reason for rejection:');
-    if (!reason) return;
+  const openRejectModal = (requestId: string) => {
+    setRejectRequestId(requestId);
+    setRejectReason("");
+    setRejectNotes("");
+    setRejectModalOpen(true);
+  };
+
+  const handleRejectRequest = async () => {
+    if (!rejectRequestId || !rejectReason.trim()) return;
 
     try {
-      const response = await fetch(`${serverUrl}/access-requests/${requestId}`, {
+      const response = await fetch(`${serverUrl}/access-requests/${rejectRequestId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ status: 'rejected', reason }),
+        body: JSON.stringify({
+          status: 'rejected',
+          reason: rejectReason.trim(),
+          internal_notes: rejectNotes.trim() || undefined,
+        }),
       });
 
       if (response.ok) {
         await fetchData();
         setSelectedRequest(null);
+        setRejectModalOpen(false);
+        setRejectRequestId(null);
         alert('Access request rejected.');
       }
     } catch (error) {
       console.error('Failed to reject request:', error);
     }
+  };
+
+  const isRequestOverdue = (submittedAt: string) => {
+    if (!platformSettings) return false;
+    const slaMs = platformSettings.review_sla_days * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(submittedAt).getTime() > slaMs;
   };
 
   const pendingCount = accessRequests.filter(r => r.status === 'pending').length;
@@ -330,17 +382,24 @@ export function AdminDashboard() {
                           <td className="px-6 py-4 text-sm text-gray-600">{request.ownerName}</td>
                           <td className="px-6 py-4 text-sm text-gray-600">{request.district}</td>
                           <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex px-2 py-1 text-xs rounded-full ${
-                                request.status === 'pending'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : request.status === 'approved'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {request.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs rounded-full ${
+                                  request.status === 'pending'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : request.status === 'approved'
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {request.status}
+                              </span>
+                              {request.status === 'pending' && isRequestOverdue(request.submitted_at) && (
+                                <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-800">
+                                  Overdue
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">
                             {new Date(request.submitted_at).toLocaleDateString()}
@@ -443,30 +502,13 @@ export function AdminDashboard() {
             )}
 
             {activeTab === 'settings' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-gray-900">{isSuperAdmin ? 'Super Admin' : 'Admin'} Settings</h2>
-
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Platform Settings</h3>
-                  <p className="text-gray-600">
-                    Configure platform-wide settings and preferences.
-                  </p>
-                </div>
-
-                <div className={`border rounded-lg p-6 ${isSuperAdmin ? 'bg-purple-50 border-purple-200' : 'bg-blue-50 border-blue-200'}`}>
-                  <h3 className={`font-semibold mb-2 ${isSuperAdmin ? 'text-purple-900' : 'text-blue-900'}`}>
-                    {isSuperAdmin ? 'Super Admin' : 'Admin'} Information
-                  </h3>
-                  <p className={isSuperAdmin ? 'text-purple-800' : 'text-blue-800'}>
-                    You are logged in as {user.name} ({user.email}) with {isSuperAdmin ? 'Super Admin' : 'Admin'} privileges.
-                  </p>
-                  {isSuperAdmin && (
-                    <p className="text-purple-800 mt-2 text-sm">
-                      As a Super Admin, you have full control over all users and can create, delete, and manage any account.
-                    </p>
-                  )}
-                </div>
-              </div>
+              <AdminSettingsPanel
+                isSuperAdmin={isSuperAdmin}
+                stats={stats}
+                onDefaultTabChange={(tab) => {
+                  setAdminPrefs((prev) => (prev ? { ...prev, default_landing_tab: tab } : prev));
+                }}
+              />
             )}
           </div>
         </div>
@@ -581,7 +623,7 @@ export function AdminDashboard() {
                     Approve Request
                   </button>
                   <button
-                    onClick={() => handleRejectRequest(selectedRequest.id)}
+                    onClick={() => openRejectModal(selectedRequest.id)}
                     className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
                   >
                     <XCircle className="w-5 h-5" />
@@ -600,6 +642,78 @@ export function AdminDashboard() {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Request Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Reject Access Request</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rejection reason
+                </label>
+                {adminPrefs?.rejection_templates && adminPrefs.rejection_templates.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {adminPrefs.rejection_templates.map((template) => (
+                      <button
+                        key={template}
+                        type="button"
+                        onClick={() => setRejectReason(template)}
+                        className={`text-xs px-2 py-1 rounded border ${
+                          rejectReason === template
+                            ? 'border-red-500 bg-red-50 text-red-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        {template}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  placeholder="Reason shown to the applicant..."
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Internal notes (admin only)
+                </label>
+                <textarea
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  placeholder="Optional internal notes..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setRejectModalOpen(false);
+                  setRejectRequestId(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectRequest}
+                disabled={!rejectReason.trim()}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Confirm rejection
+              </button>
             </div>
           </div>
         </div>

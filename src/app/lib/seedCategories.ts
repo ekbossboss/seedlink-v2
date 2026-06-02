@@ -1,22 +1,12 @@
-/** Seed category options for producer listings (value stored in DB, label shown in UI). */
-export const SEED_CATEGORIES = [
-  { value: "mini_tubers_g1", label: "Mini tubers (G1)" },
-  { value: "apical_cuttings_g1", label: "Apical cuttings (G1)" },
-  { value: "pre_basic_g2", label: "Pre basic seed (G2)" },
-  { value: "basic_g3", label: "Basic seed (G3)" },
-  { value: "certified_g4", label: "Certified seed (G4)" },
-  { value: "other", label: "Other" },
-] as const;
+import {
+  DEFAULT_SEED_CATEGORIES,
+  type SeedCategoryOption,
+} from "./platformCatalogDefaults";
 
-/** Maps legacy and current stored category values to display labels. */
-const CATEGORY_LABEL_MAP: Record<string, string> = {
-  mini_tubers_g1: "Mini tubers (G1)",
-  apical_cuttings_g1: "Apical cuttings (G1)",
-  pre_basic_g2: "Pre basic seed (G2)",
-  basic_g3: "Basic seed (G3)",
-  certified_g4: "Certified seed (G4)",
-  other: "Other",
-  // Legacy values from earlier form options
+/** @deprecated Use usePlatformCatalog().seedCategories — kept as fallback */
+export const SEED_CATEGORIES = DEFAULT_SEED_CATEGORIES;
+
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   Vegetable: "Mini tubers (G1)",
   Fruit: "Apical cuttings (G1)",
   Grain: "Pre basic seed (G2)",
@@ -25,9 +15,24 @@ const CATEGORY_LABEL_MAP: Record<string, string> = {
   Other: "Other",
 };
 
-export function getSeedCategoryLabel(category?: string | null): string {
+export function buildCategoryLabelMap(
+  categories: SeedCategoryOption[],
+): Record<string, string> {
+  const map: Record<string, string> = { ...LEGACY_CATEGORY_LABELS };
+  for (const cat of categories) {
+    map[cat.value] = cat.label;
+  }
+  return map;
+}
+
+const DEFAULT_LABEL_MAP = buildCategoryLabelMap(DEFAULT_SEED_CATEGORIES);
+
+export function getSeedCategoryLabel(
+  category?: string | null,
+  labelMap: Record<string, string> = DEFAULT_LABEL_MAP,
+): string {
   if (!category) return "Seed listing";
-  return CATEGORY_LABEL_MAP[category] ?? category;
+  return labelMap[category] ?? category;
 }
 
 export function getSeedFeatures(seed: {

@@ -3,26 +3,37 @@ import { Link } from "react-router";
 import { Search, Filter, MapPin, Star, ChevronRight, Sprout, Truck } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
 import type { MarketplaceSeed } from "../types/marketplace";
-import { getSeedCategoryLabel } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 
-async function fetchMarketplaceListings(): Promise<MarketplaceSeed[]> {
+async function fetchMarketplaceListings(): Promise<{ seeds: MarketplaceSeed[]; maintenanceMode: boolean }> {
   const response = await fetch(`${serverUrl}/seeds`);
   if (!response.ok) {
     throw new Error("Failed to load marketplace listings");
   }
   const data = await response.json();
-  return Array.isArray(data.seeds) ? data.seeds : [];
+  return {
+    seeds: Array.isArray(data.seeds) ? data.seeds : [],
+    maintenanceMode: data.maintenance_mode === true,
+  };
 }
 
 export function MarketplacePage() {
+  const { seedCategories, supportedVarieties, supportedDistricts, getCategoryLabel, refreshCatalog } =
+    usePlatformCatalog();
   const [seeds, setSeeds] = useState<MarketplaceSeed[]>([]);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariety, setSelectedVariety] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedDistrict, setSelectedDistrict] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    refreshCatalog();
+  }, [refreshCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,8 +42,11 @@ export function MarketplacePage() {
       setLoading(true);
       setError(null);
       try {
-        const listings = await fetchMarketplaceListings();
-        if (!cancelled) setSeeds(listings);
+        const { seeds: listings, maintenanceMode: maintenance } = await fetchMarketplaceListings();
+        if (!cancelled) {
+          setSeeds(listings);
+          setMaintenanceMode(maintenance);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load marketplace");
@@ -49,19 +63,23 @@ export function MarketplacePage() {
     };
   }, []);
 
-  const varieties = useMemo(() => {
-    const unique = Array.from(
-      new Set(seeds.map((s) => s.variety).filter(Boolean)),
-    ).sort();
-    return ["All Varieties", ...unique];
-  }, [seeds]);
+  const varieties = useMemo(
+    () => ["All Varieties", ...supportedVarieties],
+    [supportedVarieties],
+  );
 
-  const districts = useMemo(() => {
-    const unique = Array.from(
-      new Set(seeds.map((s) => s.location).filter(Boolean) as string[]),
-    ).sort();
-    return ["All Districts", ...unique];
-  }, [seeds]);
+  const districts = useMemo(
+    () => ["All Districts", ...supportedDistricts],
+    [supportedDistricts],
+  );
+
+  const categoryFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "All categories" },
+      ...seedCategories.map((c) => ({ value: c.value, label: c.label })),
+    ],
+    [seedCategories],
+  );
 
   const filteredSeeds = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -70,16 +88,18 @@ export function MarketplacePage() {
         const matchesSearch =
           !query ||
           seed.variety?.toLowerCase().includes(query) ||
-          getSeedCategoryLabel(seed.category).toLowerCase().includes(query) ||
+          getCategoryLabel(seed.category).toLowerCase().includes(query) ||
           seed.producer_name?.toLowerCase().includes(query) ||
           (seed.location?.toLowerCase().includes(query) ?? false);
         const matchesVariety =
           selectedVariety === "all" ||
           seed.variety?.toLowerCase() === selectedVariety.toLowerCase();
+        const matchesCategory =
+          selectedCategory === "all" || seed.category === selectedCategory;
         const matchesDistrict =
           selectedDistrict === "all" ||
           (seed.location?.toLowerCase().includes(selectedDistrict.toLowerCase()) ?? false);
-        return matchesSearch && matchesVariety && matchesDistrict;
+        return matchesSearch && matchesVariety && matchesCategory && matchesDistrict;
       })
       .sort((a, b) => {
         if (sortBy === "price-low") return (a.price || 0) - (b.price || 0);
@@ -89,10 +109,11 @@ export function MarketplacePage() {
           new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         );
       });
-  }, [seeds, searchQuery, selectedVariety, selectedDistrict, sortBy]);
+  }, [seeds, searchQuery, selectedVariety, selectedCategory, selectedDistrict, sortBy, getCategoryLabel]);
 
   const clearFilters = () => {
     setSelectedVariety("all");
+    setSelectedCategory("all");
     setSelectedDistrict("all");
     setSearchQuery("");
   };
@@ -120,6 +141,14 @@ export function MarketplacePage() {
         </div>
       )}
 
+      {maintenanceMode && !loading && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-900 text-sm">
+            The marketplace is temporarily unavailable for maintenance. Please check back later.
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-gray-600">
           {!loading && (
@@ -127,7 +156,7 @@ export function MarketplacePage() {
               {filteredSeeds.length} {filteredSeeds.length === 1 ? "listing" : "listings"}
             </span>
           )}
-          {(searchQuery || selectedVariety !== "all" || selectedDistrict !== "all") && (
+          {(searchQuery || selectedVariety !== "all" || selectedCategory !== "all" || selectedDistrict !== "all") && (
             <button
               type="button"
               onClick={clearFilters}
@@ -165,6 +194,19 @@ export function MarketplacePage() {
                 {varieties.map((v) => (
                   <option key={v} value={v === "All Varieties" ? "all" : v}>
                     {v === "All Varieties" ? "All varieties" : v}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                aria-label="Category"
+                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+              >
+                {categoryFilterOptions.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
                   </option>
                 ))}
               </select>
@@ -226,7 +268,7 @@ export function MarketplacePage() {
                             {primaryImage(seed) ? (
                               <img
                                 src={primaryImage(seed)!}
-                                alt={getSeedCategoryLabel(seed.category)}
+                                alt={getCategoryLabel(seed.category)}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
                             ) : (
@@ -249,7 +291,7 @@ export function MarketplacePage() {
                             className="hover:text-green-700"
                           >
                             <h3 className="font-bold text-lg text-gray-900 mb-1">
-                              {getSeedCategoryLabel(seed.category)}
+                              {getCategoryLabel(seed.category)}
                             </h3>
                           </Link>
                           {seed.variety && (

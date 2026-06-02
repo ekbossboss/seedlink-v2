@@ -82,6 +82,162 @@ const hasSuperAdmin = async () => {
   return users.some((userData) => parseStored(userData)?.role === "super_admin");
 };
 
+const PLATFORM_SETTINGS_KEY = "platform:settings";
+
+const DEFAULT_SEED_CATEGORIES = [
+  { value: "mini_tubers_g1", label: "Mini tubers (G1)" },
+  { value: "apical_cuttings_g1", label: "Apical cuttings (G1)" },
+  { value: "pre_basic_g2", label: "Pre basic seed (G2)" },
+  { value: "basic_g3", label: "Basic seed (G3)" },
+  { value: "certified_g4", label: "Certified seed (G4)" },
+  { value: "other", label: "Other" },
+];
+
+const DEFAULT_SUPPORTED_DISTRICTS = [
+  "Kigali", "Nyarugenge", "Gasabo", "Kicukiro", "Musanze", "Rubavu",
+  "Burera", "Gicumbi", "Rulindo", "Karongi", "Rusizi", "Nyamasheke",
+  "Huye", "Nyanza", "Nyagatare", "Rwamagana",
+];
+
+const DEFAULT_SUPPORTED_VARIETIES = [
+  "Kinigi", "Cruza", "Victoria", "Kirundo", "Sangwe", "Mabondo",
+];
+
+const DEFAULT_PLATFORM_SETTINGS = {
+  maintenance_mode: false,
+  producer_registration_open: true,
+  quote_expiry_days: 7,
+  default_listing_unit: "kg",
+  min_listing_price: 0,
+  min_listing_quantity: 1,
+  max_open_quotes_per_buyer: 10,
+  quote_allowed_producers: true,
+  quote_allowed_admins: true,
+  quote_allowed_super_admins: true,
+  review_sla_days: 5,
+  seed_categories: DEFAULT_SEED_CATEGORIES,
+  supported_varieties: DEFAULT_SUPPORTED_VARIETIES,
+  supported_districts: DEFAULT_SUPPORTED_DISTRICTS,
+  updated_at: null as string | null,
+  updated_by: null as string | null,
+};
+
+const normalizeSeedCategories = (categories: unknown) => {
+  if (!Array.isArray(categories) || categories.length === 0) {
+    return [...DEFAULT_SEED_CATEGORIES];
+  }
+  const seen = new Set<string>();
+  const normalized = [];
+  for (const item of categories) {
+    if (!item || typeof item !== "object") continue;
+    const value = String((item as any).value || "").trim();
+    const label = String((item as any).label || "").trim();
+    if (!value || !label || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push({ value, label });
+  }
+  return normalized.length > 0 ? normalized : [...DEFAULT_SEED_CATEGORIES];
+};
+
+const normalizeDistricts = (districts: unknown) => {
+  if (!Array.isArray(districts) || districts.length === 0) {
+    return [...DEFAULT_SUPPORTED_DISTRICTS];
+  }
+  const seen = new Set<string>();
+  const normalized = [];
+  for (const d of districts) {
+    const name = String(d || "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    normalized.push(name);
+  }
+  return normalized.length > 0 ? normalized : [...DEFAULT_SUPPORTED_DISTRICTS];
+};
+
+const normalizeVarieties = (varieties: unknown) => {
+  if (!Array.isArray(varieties) || varieties.length === 0) {
+    return [...DEFAULT_SUPPORTED_VARIETIES];
+  }
+  const seen = new Set<string>();
+  const normalized = [];
+  for (const v of varieties) {
+    const name = String(v || "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(name);
+  }
+  return normalized.length > 0 ? normalized : [...DEFAULT_SUPPORTED_VARIETIES];
+};
+
+const DEFAULT_ADMIN_PREFS = {
+  notify_new_access_request: true,
+  notify_pending_escalation: true,
+  notify_flagged_listing: true,
+  default_landing_tab: "overview" as "overview" | "requests",
+  rejection_templates: [
+    "Incomplete documentation",
+    "Invalid certification number",
+    "Business information could not be verified",
+    "Other — see internal notes",
+  ],
+};
+
+const getPlatformSettings = async () => {
+  const data = await kv.get(PLATFORM_SETTINGS_KEY);
+  const stored = data ? parseStored(data) : {};
+  const hasVarietiesKey =
+    stored && typeof stored === "object" && "supported_varieties" in stored;
+  return {
+    ...DEFAULT_PLATFORM_SETTINGS,
+    ...stored,
+    seed_categories: normalizeSeedCategories(stored.seed_categories),
+    supported_varieties: hasVarietiesKey
+      ? normalizeVarieties(stored.supported_varieties)
+      : normalizeVarieties(DEFAULT_SUPPORTED_VARIETIES),
+    supported_districts: normalizeDistricts(stored.supported_districts),
+  };
+};
+
+const getAdminPrefs = async (userId: string) => {
+  const data = await kv.get(`admin_prefs:${userId}`);
+  if (!data) return { ...DEFAULT_ADMIN_PREFS };
+  return { ...DEFAULT_ADMIN_PREFS, ...parseStored(data) };
+};
+
+const appendAuditLog = async (entry: {
+  actor_id: string;
+  actor_name: string;
+  actor_role: string;
+  action: string;
+  target_type?: string;
+  target_id?: string;
+  details?: string;
+}) => {
+  const id = `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  const log = { id, ...entry, created_at: new Date().toISOString() };
+  await kv.set(`audit_log:${id}`, JSON.stringify(log));
+  return log;
+};
+
+const getAdminProfile = async (authHeader: string | null) => {
+  const user = await verifyUser(authHeader);
+  if (!user) return null;
+  const profileData = await kv.get(`user:${user.id}`);
+  if (!profileData) return null;
+  const profile = parseStored(profileData);
+  if (!isAdminOrSuperAdmin(profile)) return null;
+  return { user, profile };
+};
+
+const csvEscape = (value: unknown) => {
+  const str = value == null ? "" : String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
 const isApprovedProducer = (profile: any) => {
   return (
     profile?.role === "producer" &&
@@ -140,6 +296,35 @@ const getMarketplaceSeeds = async () => {
 // Health check endpoint
 app.get("/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// Public platform status (maintenance, registration gates)
+app.get("/platform/public-status", async (c) => {
+  try {
+    const platform = await getPlatformSettings();
+    return c.json({
+      maintenance_mode: platform.maintenance_mode,
+      producer_registration_open: platform.producer_registration_open,
+    });
+  } catch (error) {
+    console.log("Public platform status error:", error);
+    return c.json({ error: "Failed to get platform status" }, 500);
+  }
+});
+
+// Public catalog (seed categories & districts for forms and filters)
+app.get("/platform/catalog", async (c) => {
+  try {
+    const platform = await getPlatformSettings();
+    return c.json({
+      seed_categories: platform.seed_categories,
+      supported_varieties: platform.supported_varieties,
+      supported_districts: platform.supported_districts,
+    });
+  } catch (error) {
+    console.log("Platform catalog error:", error);
+    return c.json({ error: "Failed to get platform catalog" }, 500);
+  }
 });
 
 // Check whether super admin setup is still available (ONE-TIME SETUP)
@@ -282,7 +467,11 @@ app.put("/auth/profile", async (c) => {
     }
 
     const profile = JSON.parse(profileData);
-    const updatedProfile = { ...profile, ...updates, id: user.id }; // Prevent ID change
+    const updatedProfile = {
+      ...profile,
+      id: user.id,
+      ...(updates.name !== undefined ? { name: updates.name } : {}),
+    };
 
     await kv.set(`user:${user.id}`, JSON.stringify(updatedProfile));
 
@@ -352,6 +541,11 @@ app.post("/access-requests", async (c) => {
     const user = await verifyUser(c.req.header('Authorization'));
     if (!user) {
       return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const platformSettings = await getPlatformSettings();
+    if (!platformSettings.producer_registration_open) {
+      return c.json({ error: 'Producer registration is currently closed' }, 403);
     }
 
     const requestData = await c.req.json();
@@ -424,7 +618,7 @@ app.put("/access-requests/:id", async (c) => {
     }
 
     const requestId = c.req.param('id');
-    const { status, reason } = await c.req.json();
+    const { status, reason, internal_notes } = await c.req.json();
 
     const requestData = await kv.get(`access_request:${requestId}`);
     if (!requestData) {
@@ -436,8 +630,19 @@ app.put("/access-requests/:id", async (c) => {
     request.reviewed_at = new Date().toISOString();
     request.reviewed_by = user.id;
     if (reason) request.reason = reason;
+    if (internal_notes !== undefined) request.internal_notes = internal_notes;
 
     await kv.set(`access_request:${requestId}`, JSON.stringify(request));
+
+    await appendAuditLog({
+      actor_id: user.id,
+      actor_name: profile.name || profile.email,
+      actor_role: profile.role,
+      action: status === "approved" ? "access_request_approved" : "access_request_rejected",
+      target_type: "access_request",
+      target_id: requestId,
+      details: reason || undefined,
+    });
 
     // If approved, update user role to producer
     if (status === 'approved') {
@@ -520,8 +725,12 @@ app.post("/seeds", async (c) => {
 // Public marketplace: active seeds from approved producers only
 app.get("/seeds", async (c) => {
   try {
+    const platformSettings = await getPlatformSettings();
+    if (platformSettings.maintenance_mode) {
+      return c.json({ seeds: [], maintenance_mode: true });
+    }
     const seeds = await getMarketplaceSeeds();
-    return c.json({ seeds });
+    return c.json({ seeds, maintenance_mode: false });
   } catch (error) {
     console.log('Get seeds error:', error);
     return c.json({ error: 'Failed to get seeds' }, 500);
@@ -1481,6 +1690,16 @@ app.post("/super-admin/create-user", async (c) => {
     await kv.set(`user:${authData.user.id}`, JSON.stringify(userProfile));
     await kv.set(`user_email:${email}`, authData.user.id);
 
+    await appendAuditLog({
+      actor_id: user.id,
+      actor_name: profile.name || profile.email,
+      actor_role: profile.role,
+      action: "user_created",
+      target_type: "user",
+      target_id: authData.user.id,
+      details: `Created ${role} account for ${email}`,
+    });
+
     return c.json({ success: true, user: userProfile });
   } catch (error) {
     console.log('Create user error:', error);
@@ -1519,11 +1738,22 @@ app.put("/super-admin/change-role/:userId", async (c) => {
     }
 
     const targetUser = JSON.parse(targetUserData);
+    const previousRole = targetUser.role;
     targetUser.role = newRole;
     targetUser.role_updated_at = new Date().toISOString();
     targetUser.role_updated_by = user.id;
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
+
+    await appendAuditLog({
+      actor_id: user.id,
+      actor_name: profile.name || profile.email,
+      actor_role: profile.role,
+      action: "role_changed",
+      target_type: "user",
+      target_id: userId,
+      details: `Changed role from ${previousRole} to ${newRole}`,
+    });
 
     return c.json({ success: true, user: targetUser });
   } catch (error) {
@@ -1572,6 +1802,16 @@ app.delete("/super-admin/delete-user/:userId", async (c) => {
     await kv.del(`user:${userId}`);
     await kv.del(`user_email:${targetUser.email}`);
 
+    await appendAuditLog({
+      actor_id: user.id,
+      actor_name: profile.name || profile.email,
+      actor_role: profile.role,
+      action: "user_deleted",
+      target_type: "user",
+      target_id: userId,
+      details: `Deleted account ${targetUser.email}`,
+    });
+
     return c.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     console.log('Delete user error:', error);
@@ -1617,10 +1857,267 @@ app.put("/super-admin/suspend-user/:userId", async (c) => {
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
 
+    await appendAuditLog({
+      actor_id: user.id,
+      actor_name: profile.name || profile.email,
+      actor_role: profile.role,
+      action: suspended ? "user_suspended" : "user_unsuspended",
+      target_type: "user",
+      target_id: userId,
+      details: reason || undefined,
+    });
+
     return c.json({ success: true, user: targetUser });
   } catch (error) {
     console.log('Suspend user error:', error);
     return c.json({ error: 'Failed to suspend user' }, 500);
+  }
+});
+
+// ADMIN SETTINGS ENDPOINTS
+
+app.get("/admin/settings/prefs", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Admin/Super Admin only" }, 403);
+    const prefs = await getAdminPrefs(admin.user.id);
+    return c.json({ prefs });
+  } catch (error) {
+    console.log("Get admin prefs error:", error);
+    return c.json({ error: "Failed to get admin preferences" }, 500);
+  }
+});
+
+app.put("/admin/settings/prefs", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Admin/Super Admin only" }, 403);
+
+    const body = await c.req.json();
+    const current = await getAdminPrefs(admin.user.id);
+    const updated = {
+      ...current,
+      notify_new_access_request: body.notify_new_access_request ?? current.notify_new_access_request,
+      notify_pending_escalation: body.notify_pending_escalation ?? current.notify_pending_escalation,
+      notify_flagged_listing: body.notify_flagged_listing ?? current.notify_flagged_listing,
+      default_landing_tab: body.default_landing_tab ?? current.default_landing_tab,
+      rejection_templates: Array.isArray(body.rejection_templates)
+        ? body.rejection_templates.filter((t: unknown) => typeof t === "string" && t.trim())
+        : current.rejection_templates,
+    };
+
+    await kv.set(`admin_prefs:${admin.user.id}`, JSON.stringify(updated));
+    return c.json({ success: true, prefs: updated });
+  } catch (error) {
+    console.log("Update admin prefs error:", error);
+    return c.json({ error: "Failed to update admin preferences" }, 500);
+  }
+});
+
+app.get("/admin/settings/platform", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Admin/Super Admin only" }, 403);
+
+    const platform = await getPlatformSettings();
+    const initAvailable = !(await hasSuperAdmin());
+
+    return c.json({
+      platform,
+      editable: admin.profile.role === "super_admin",
+      init_super_admin_available: initAvailable,
+    });
+  } catch (error) {
+    console.log("Get platform settings error:", error);
+    return c.json({ error: "Failed to get platform settings" }, 500);
+  }
+});
+
+app.put("/admin/settings/catalog", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Admin/Super Admin only" }, 403);
+
+    const body = await c.req.json();
+    const current = await getPlatformSettings();
+    const updated = {
+      ...current,
+      seed_categories: body.seed_categories !== undefined
+        ? normalizeSeedCategories(body.seed_categories)
+        : current.seed_categories,
+      supported_varieties: body.supported_varieties !== undefined
+        ? normalizeVarieties(body.supported_varieties)
+        : current.supported_varieties,
+      supported_districts: body.supported_districts !== undefined
+        ? normalizeDistricts(body.supported_districts)
+        : current.supported_districts,
+      updated_at: new Date().toISOString(),
+      updated_by: admin.user.id,
+    };
+
+    await kv.set(PLATFORM_SETTINGS_KEY, updated);
+
+    await appendAuditLog({
+      actor_id: admin.user.id,
+      actor_name: admin.profile.name || admin.profile.email,
+      actor_role: admin.profile.role,
+      action: "platform_catalog_updated",
+      target_type: "platform",
+      target_id: PLATFORM_SETTINGS_KEY,
+    });
+
+    return c.json({ success: true, platform: updated });
+  } catch (error) {
+    console.log("Update platform catalog error:", error);
+    return c.json({ error: "Failed to update platform catalog" }, 500);
+  }
+});
+
+app.put("/super-admin/platform-settings", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Super Admin only" }, 403);
+    if (admin.profile.role !== "super_admin") {
+      return c.json({ error: "Forbidden - Super Admin only" }, 403);
+    }
+
+    const body = await c.req.json();
+    const current = await getPlatformSettings();
+    const updated = {
+      ...current,
+      maintenance_mode: body.maintenance_mode ?? current.maintenance_mode,
+      producer_registration_open: body.producer_registration_open ?? current.producer_registration_open,
+      quote_expiry_days: Number(body.quote_expiry_days ?? current.quote_expiry_days),
+      default_listing_unit: body.default_listing_unit ?? current.default_listing_unit,
+      min_listing_price: Number(body.min_listing_price ?? current.min_listing_price),
+      min_listing_quantity: Number(body.min_listing_quantity ?? current.min_listing_quantity),
+      max_open_quotes_per_buyer: Number(body.max_open_quotes_per_buyer ?? current.max_open_quotes_per_buyer),
+      quote_allowed_producers: body.quote_allowed_producers ?? current.quote_allowed_producers,
+      quote_allowed_admins: body.quote_allowed_admins ?? current.quote_allowed_admins,
+      quote_allowed_super_admins: body.quote_allowed_super_admins ?? current.quote_allowed_super_admins,
+      review_sla_days: Number(body.review_sla_days ?? current.review_sla_days),
+      seed_categories: body.seed_categories !== undefined
+        ? normalizeSeedCategories(body.seed_categories)
+        : current.seed_categories,
+      supported_varieties: body.supported_varieties !== undefined
+        ? normalizeVarieties(body.supported_varieties)
+        : current.supported_varieties,
+      supported_districts: body.supported_districts !== undefined
+        ? normalizeDistricts(body.supported_districts)
+        : current.supported_districts,
+      updated_at: new Date().toISOString(),
+      updated_by: admin.user.id,
+    };
+
+    await kv.set(PLATFORM_SETTINGS_KEY, updated);
+
+    await appendAuditLog({
+      actor_id: admin.user.id,
+      actor_name: admin.profile.name || admin.profile.email,
+      actor_role: admin.profile.role,
+      action: "platform_settings_updated",
+      target_type: "platform",
+      target_id: PLATFORM_SETTINGS_KEY,
+      details: JSON.stringify(body),
+    });
+
+    return c.json({ success: true, platform: updated });
+  } catch (error) {
+    console.log("Update platform settings error:", error);
+    return c.json({ error: "Failed to update platform settings" }, 500);
+  }
+});
+
+app.get("/admin/audit-log", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin) return c.json({ error: "Forbidden - Admin/Super Admin only" }, 403);
+
+    const limit = Math.min(Number(c.req.query("limit") || 50), 200);
+    const logsRaw = await kv.getByPrefix("audit_log:");
+    const logs = logsRaw
+      .map(parseStored)
+      .filter(Boolean)
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+
+    const filtered =
+      admin.profile.role === "super_admin"
+        ? logs
+        : logs.filter((log: any) => log.actor_id === admin.user.id);
+
+    return c.json({ logs: filtered.slice(0, limit) });
+  } catch (error) {
+    console.log("Get audit log error:", error);
+    return c.json({ error: "Failed to get audit log" }, 500);
+  }
+});
+
+app.get("/super-admin/export/:type", async (c) => {
+  try {
+    const admin = await getAdminProfile(c.req.header("Authorization"));
+    if (!admin || admin.profile.role !== "super_admin") {
+      return c.json({ error: "Forbidden - Super Admin only" }, 403);
+    }
+
+    const type = c.req.param("type");
+    let csv = "";
+    let filename = "export.csv";
+
+    if (type === "users") {
+      const usersRaw = await kv.getByPrefix("user:");
+      const users = usersRaw.map(parseStored).filter((u: any) => u?.id && u?.email);
+      csv = [
+        "id,email,name,role,created_at,suspended",
+        ...users.map((u: any) =>
+          [u.id, u.email, u.name, u.role, u.created_at, u.suspended ? "yes" : "no"].map(csvEscape).join(",")
+        ),
+      ].join("\n");
+      filename = "seedlink-users.csv";
+    } else if (type === "access-requests") {
+      const requestsRaw = await kv.getByPrefix("access_request:req_");
+      const requests = requestsRaw.map(parseStored).filter(Boolean);
+      csv = [
+        "id,user_email,businessName,ownerName,district,status,submitted_at,reviewed_at,reason",
+        ...requests.map((r: any) =>
+          [r.id, r.user_email, r.businessName, r.ownerName, r.district, r.status, r.submitted_at, r.reviewed_at || "", r.reason || ""].map(csvEscape).join(",")
+        ),
+      ].join("\n");
+      filename = "seedlink-access-requests.csv";
+    } else if (type === "quotes") {
+      const quotesRaw = await kv.getByPrefix("quote:");
+      const quotes = quotesRaw.map(parseStored).filter(Boolean);
+      csv = [
+        "id,seed_id,producer_id,buyer_id,quantity,status,created_at,updated_at",
+        ...quotes.map((q: any) =>
+          [q.id, q.seed_id, q.producer_id, q.buyer_id, q.quantity, q.status, q.created_at, q.updated_at].map(csvEscape).join(",")
+        ),
+      ].join("\n");
+      filename = "seedlink-quotes.csv";
+    } else {
+      return c.json({ error: "Invalid export type. Use users, access-requests, or quotes." }, 400);
+    }
+
+    await appendAuditLog({
+      actor_id: admin.user.id,
+      actor_name: admin.profile.name || admin.profile.email,
+      actor_role: admin.profile.role,
+      action: "data_exported",
+      target_type: "export",
+      target_id: type,
+    });
+
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (error) {
+    console.log("Export error:", error);
+    return c.json({ error: "Failed to export data" }, 500);
   }
 });
 

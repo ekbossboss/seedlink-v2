@@ -3,7 +3,8 @@ import { useParams, Link, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { MapPin, Star, ShieldCheck, Truck, ArrowLeft, Minus, Plus, FileText } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
-import { getSeedCategoryLabel, getSeedFeatures } from "../lib/seedCategories";
+import { getSeedFeatures } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 import { QuoteThreadPanel } from "./QuoteThreadPanel";
 import type { QuoteRequest } from "../types/quotes";
 
@@ -49,6 +50,7 @@ export function SeedDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, accessToken } = useAuth();
+  const { getCategoryLabel } = usePlatformCatalog();
   const [seed, setSeed] = useState<SeedListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(50);
@@ -106,7 +108,7 @@ export function SeedDetailPage() {
     fetchQuote();
   }, [id, accessToken, user]);
 
-  const categoryLabel = getSeedCategoryLabel(seed?.category);
+  const categoryLabel = getCategoryLabel(seed?.category);
   const featureList = useMemo(
     () => (seed ? getSeedFeatures(seed) : []),
     [seed],

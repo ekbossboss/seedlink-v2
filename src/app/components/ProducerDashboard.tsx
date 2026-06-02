@@ -3,8 +3,7 @@ import { Plus, Edit, Trash2, Package, ShoppingBag, TrendingUp, Eye } from "lucid
 import { useSearchParams, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { serverUrl } from "../lib/supabase";
-import { RWANDA_DISTRICTS } from "../lib/rwandaDistricts";
-import { SEED_CATEGORIES, getSeedCategoryLabel } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 import type { QuoteRequest } from "../types/quotes";
 import { QuoteThreadPanel } from "./QuoteThreadPanel";
 
@@ -28,9 +27,9 @@ const formatListingLocation = (district: string, detail: string) => {
   return extra ? `${base}, ${extra}` : base;
 };
 
-const parseStoredLocation = (stored?: string | null) => {
+const parseStoredLocation = (stored?: string | null, districts: string[] = []) => {
   if (!stored) return { location: "", locationDetail: "" };
-  const district = RWANDA_DISTRICTS.find(
+  const district = districts.find(
     (d) => stored === d || stored.startsWith(`${d},`),
   );
   if (district) {
@@ -44,6 +43,8 @@ const parseStoredLocation = (stored?: string | null) => {
 
 export function ProducerDashboard() {
   const { user, accessToken } = useAuth();
+  const { seedCategories, supportedVarieties, supportedDistricts, getCategoryLabel } =
+    usePlatformCatalog();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"overview" | "listings" | "orders" | "add">(
   (searchParams.get("tab") as "overview" | "listings" | "orders" | "add") || "overview");
@@ -298,7 +299,7 @@ export function ProducerDashboard() {
   };
 
   const handleEdit = (seed: any) => {
-    const { location, locationDetail } = parseStoredLocation(seed.location);
+    const { location, locationDetail } = parseStoredLocation(seed.location, supportedDistricts);
     setEditingSeedId(seed.id);
     setActiveTab('add');
     setNewListing({
@@ -505,7 +506,7 @@ export function ProducerDashboard() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <h3 className="text-lg font-semibold text-gray-900">
-                              {getSeedCategoryLabel(seed.category)}
+                              {getCategoryLabel(seed.category)}
                             </h3>
                             {seed.category && seed.variety && (
                               <p className="text-sm text-gray-500">Variety: {seed.variety}</p>
@@ -598,7 +599,7 @@ export function ProducerDashboard() {
                           <div className="flex justify-between items-start mb-3">
                             <div>
                               <h3 className="font-semibold text-gray-900">
-                                {getSeedCategoryLabel(q.seed_category)}
+                                {getCategoryLabel(q.seed_category)}
                                 {q.seed_variety ? ` · ${q.seed_variety}` : ""}
                               </h3>
                               <p className="text-sm text-gray-600">
@@ -703,12 +704,11 @@ export function ProducerDashboard() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                     >
                       <option value="">Select variety</option>
-                      <option value="Kinigi">Kinigi</option>
-                      <option value="Cruza">Cruza</option>
-                      <option value="Victoria">Victoria</option>
-                      <option value="Kirundo">Kirundo</option>
-                      <option value="Sangwe">Sangwe</option>
-                      <option value="Mabondo">Mabondo</option>
+                      {supportedVarieties.map((variety) => (
+                        <option key={variety} value={variety}>
+                          {variety}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -724,7 +724,7 @@ export function ProducerDashboard() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                     >
                       <option value="">Select category</option>
-                      {SEED_CATEGORIES.map((cat) => (
+                      {seedCategories.map((cat) => (
                         <option key={cat.value} value={cat.value}>
                           {cat.label}
                         </option>
@@ -791,7 +791,7 @@ export function ProducerDashboard() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                     >
                       <option value="">Select district where seeds are stored</option>
-                      {RWANDA_DISTRICTS.map((district) => (
+                      {supportedDistricts.map((district) => (
                         <option key={district} value={district}>
                           {district}
                         </option>

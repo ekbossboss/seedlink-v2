@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { serverUrl } from "../lib/supabase";
 import { Package, Clock, CheckCircle, XCircle, MessageSquare } from "lucide-react";
-import { getSeedCategoryLabel } from "../lib/seedCategories";
+import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 import type { QuoteRequest } from "../types/quotes";
 import { QuoteThreadPanel } from "./QuoteThreadPanel";
 
@@ -19,6 +19,7 @@ interface Order {
 
 export function MyOrdersPage() {
   const { user, accessToken } = useAuth();
+  const { getCategoryLabel } = usePlatformCatalog();
   const [orders, setOrders] = useState<Order[]>([]);
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,7 +164,7 @@ export function MyOrdersPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="font-bold text-lg text-gray-900">
-                          {getSeedCategoryLabel(q.seed_category)}
+                          {getCategoryLabel(q.seed_category)}
                           {q.seed_variety ? ` · ${q.seed_variety}` : ""}
                         </h3>
                         <p className="text-sm text-gray-600">from {q.producer_name}</p>
