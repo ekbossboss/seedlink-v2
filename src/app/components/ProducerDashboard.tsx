@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, Package, ShoppingBag, TrendingUp, Eye } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { serverUrl } from "../lib/supabase";
 
@@ -30,6 +30,9 @@ export function ProducerDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [editingSeedId, setEditingSeedId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const urls = files.map((file) => URL.createObjectURL(file));
@@ -39,6 +42,20 @@ export function ProducerDashboard() {
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [files]);
+
+  const fetchProducerSeeds = async (token?: string) => {
+    if (!user?.id || !token) return;
+    try {
+      const seedsRes = await fetch(`${serverUrl}/seeds/producer/${user.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!seedsRes.ok) return;
+      const seedsData = await seedsRes.json();
+      setSeeds(seedsData.seeds || []);
+    } catch (err) {
+      console.error('Error fetching seeds:', err);
+    }
+  };
 
   // Fetch producer's seeds and orders
   useEffect(() => {
@@ -139,30 +156,63 @@ export function ProducerDashboard() {
         }
       }
 
-      const response = await fetch(`${serverUrl}/seeds`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          variety: newListing.variety,
-          category: newListing.category,
-          price: parseFloat(newListing.price),
-          available: parseFloat(newListing.available),
-          minOrder: parseFloat(newListing.minOrder),
-          description: newListing.description,
-          keyFeatures: newListing.features,
-          images: imageUrls,
-        }),
-      });
+      if (editingSeedId) {
+        // Update existing listing
+        const combinedImages = [...existingImages, ...imageUrls];
+        const res = await fetch(`${serverUrl}/seeds/${editingSeedId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            variety: newListing.variety,
+            category: newListing.category,
+            price: parseFloat(newListing.price),
+            available: parseFloat(newListing.available),
+            minOrder: parseFloat(newListing.minOrder),
+            description: newListing.description,
+            keyFeatures: newListing.features,
+            features: newListing.features,
+            images: combinedImages,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create listing');
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Failed to update listing');
+        }
+
+        alert('Listing updated successfully!');
+        setEditingSeedId(null);
+        setExistingImages([]);
+      } else {
+        const response = await fetch(`${serverUrl}/seeds`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            variety: newListing.variety,
+            category: newListing.category,
+            price: parseFloat(newListing.price),
+            available: parseFloat(newListing.available),
+            minOrder: parseFloat(newListing.minOrder),
+            description: newListing.description,
+            keyFeatures: newListing.features,
+            features: newListing.features,
+            images: imageUrls,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create listing');
+        }
+
+        alert("Seed listing created successfully!");
       }
-
-      alert("Seed listing created successfully!");
       setNewListing({
         variety: "",
         category: "",
@@ -196,6 +246,50 @@ export function ProducerDashboard() {
       alert(err instanceof Error ? err.message : 'Failed to create listing');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePreview = (seedId: string) => {
+    navigate(`/seed/${seedId}`);
+  };
+
+  const handleEdit = (seed: any) => {
+    setEditingSeedId(seed.id);
+    setActiveTab('add');
+    setNewListing({
+      variety: seed.variety || '',
+      category: seed.category || '',
+      price: String(seed.price || ''),
+      available: String(seed.available || ''),
+      minOrder: String(seed.minOrder || ''),
+      description: seed.description || '',
+      features: seed.features || seed.keyFeatures || [],
+    });
+    setExistingImages(seed.images || (seed.image ? [seed.image] : []));
+    setFiles([]);
+    setFilePreviews([]);
+  };
+
+  const handleDelete = async (seedId: string) => {
+    if (!confirm('Delete this listing? This action cannot be undone.')) return;
+    if (!accessToken) {
+      alert('Not authenticated');
+      return;
+    }
+    try {
+      const res = await fetch(`${serverUrl}/seeds/${seedId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Failed to delete listing');
+      }
+      // refresh list
+      await fetchProducerSeeds(accessToken);
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete listing');
     }
   };
 
@@ -394,13 +488,13 @@ export function ProducerDashboard() {
                         </div>
 
                         <div className="flex gap-2">
-                          <button className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                          <button onClick={() => handlePreview(seed.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                             <Eye className="w-5 h-5" />
                           </button>
-                          <button className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <button onClick={() => handleEdit(seed)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                             <Edit className="w-5 h-5" />
                           </button>
-                          <button className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                          <button onClick={() => handleDelete(seed.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                             <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
@@ -662,6 +756,22 @@ export function ProducerDashboard() {
                       />
                       <span className="text-sm font-medium">Select photos or drag them here</span>
                     </label>
+                    {existingImages.length > 0 && (
+                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {existingImages.map((url, idx) => (
+                          <div key={url} className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white">
+                            <img src={url} alt={`Existing ${idx + 1}`} className="h-28 w-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setExistingImages((prev) => prev.filter((_, i) => i !== idx))}
+                              className="absolute top-2 right-2 bg-white rounded-full p-1 text-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {files.length > 0 && (
                       <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {filePreviews.map((preview, index) => (
@@ -682,10 +792,25 @@ export function ProducerDashboard() {
                       disabled={submitting}
                       className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
-                      {submitting ? 'Creating...' : 'Create Listing'}
+                      {submitting ? (editingSeedId ? 'Updating...' : 'Creating...') : (editingSeedId ? 'Update Listing' : 'Create Listing')}
                     </button>
                     <button
-                      onClick={() => setActiveTab("listings")}
+                      onClick={() => {
+                        setActiveTab("listings");
+                        if (editingSeedId) {
+                          setEditingSeedId(null);
+                          setExistingImages([]);
+                          setNewListing({
+                            variety: "",
+                            category: "",
+                            price: "",
+                            available: "",
+                            minOrder: "",
+                            description: "",
+                            features: [] as string[],
+                          });
+                        }
+                      }}
                       disabled={submitting}
                       className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:bg-gray-100"
                     >

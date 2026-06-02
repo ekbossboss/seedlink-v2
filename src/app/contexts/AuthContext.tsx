@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (token: string) => {
+  const fetchProfile = async (token: string): Promise<{ ok: boolean; status?: number }> => {
     try {
       const response = await fetch(`${serverUrl}/auth/profile`, {
         headers: {
@@ -44,14 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser(data.profile);
+        return { ok: true, status: response.status };
       } else {
         setUser(null);
         setAccessToken(null);
+        return { ok: false, status: response.status };
       }
     } catch (error) {
       console.error('Failed to fetch profile:', error);
       setUser(null);
       setAccessToken(null);
+      return { ok: false };
     }
   };
 
@@ -91,7 +94,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (data.session?.access_token) {
       setAccessToken(data.session.access_token);
-      await fetchProfile(data.session.access_token);
+      const profileResult = await fetchProfile(data.session.access_token);
+      if (!profileResult.ok) {
+        await supabase.auth.signOut();
+        throw new Error(
+          profileResult.status === 404
+            ? 'Account profile not found. Please sign up or contact support.'
+            : 'Failed to load your profile. Please try again.'
+        );
+      }
     }
   };
 
