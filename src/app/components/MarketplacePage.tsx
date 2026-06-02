@@ -18,27 +18,43 @@ export function MarketplacePage() {
   // Fetch seeds from API
   useEffect(() => {
     const fetchSeeds = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+      setLoading(true);
+      setError(null);
 
-        const response = await fetch(`${serverUrl}/seeds`, {
-          headers: accessToken ? {
-            'Authorization': `Bearer ${accessToken}`,
-          } : {},
-        });
+      let attempts = 0;
+      let lastError: any = null;
 
-        if (!response.ok) throw new Error('Failed to fetch seeds');
-        const data = await response.json();
-        setSeeds(data.seeds || []);
-      } catch (err) {
-        console.error('Error fetching seeds:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load seeds');
-        // Set empty array to show "no seeds" message instead of error breaking the page
-        setSeeds([]);
-      } finally {
-        setLoading(false);
+      while (attempts < 2) {
+        try {
+          const response = await fetch(`${serverUrl}/seeds`, {
+            headers: accessToken ? {
+              'Authorization': `Bearer ${accessToken}`,
+            } : {},
+          });
+
+          if (!response.ok) throw new Error('Failed to fetch seeds');
+          const data = await response.json();
+          setSeeds(data.seeds || []);
+          lastError = null;
+          break;
+        } catch (err) {
+          console.error('Error fetching seeds (attempt', attempts + 1, '):', err);
+          lastError = err;
+          attempts += 1;
+          if (attempts < 2) {
+            // small backoff before retrying
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
       }
+
+      if (lastError) {
+        setError(lastError instanceof Error ? lastError.message : 'Failed to load seeds');
+        // ensure we have an array to avoid render errors
+        setSeeds([]);
+      }
+
+      setLoading(false);
     };
 
     fetchSeeds();
@@ -51,7 +67,7 @@ export function MarketplacePage() {
   // Filter and sort seeds
   const filteredSeeds = seeds
     .filter((seed) => {
-      const matchesSearch = (seed.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false) ||
+      const matchesSearch = (seed.variety?.toLowerCase().includes(searchQuery.toLowerCase()) || false) ||
         (seed.producer_name?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
       const matchesVariety = selectedVariety === "all" || seed.variety?.toLowerCase() === selectedVariety.toLowerCase();
       const matchesDistrict = selectedDistrict === "all" || (seed.location?.includes(selectedDistrict) ?? false);
@@ -73,7 +89,7 @@ export function MarketplacePage() {
         </div>
       </div>
 
-      {error && (
+      {error && seeds.length === 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-700">
             Note: {error}. Showing available seeds.
@@ -167,7 +183,7 @@ export function MarketplacePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search seeds or producers..."
+                  placeholder="Search varieties or producers..."
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
@@ -194,7 +210,7 @@ export function MarketplacePage() {
                         {((seed.images && seed.images.length > 0) ? seed.images[0] : seed.image) ? (
                           <img
                             src={(seed.images && seed.images.length > 0) ? seed.images[0] : seed.image}
-                            alt={seed.name}
+                            alt={seed.variety || seed.name}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                         ) : (
@@ -210,10 +226,10 @@ export function MarketplacePage() {
                       </div>
 
                       <div className="p-5">
-                        <h3 className="font-bold text-lg text-gray-900 mb-1">{seed.name}</h3>
+                        <h3 className="font-bold text-lg text-gray-900 mb-1">{seed.variety || seed.name}</h3>
                         <p className="text-sm text-gray-600 mb-3">{seed.producer_name || 'Producer'}</p>
 
-                        {seed.rating && (
+                        {seed.rating !== undefined && seed.rating !== null && (
                           <div className="flex items-center gap-2 mb-3">
                             <div className="flex items-center gap-1">
                               <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />

@@ -465,7 +465,17 @@ app.get("/make-server-8bf31221/seeds", async (c) => {
     const seeds = await kv.getByPrefix('seed:seed_');
     const parsedSeeds = seeds.map(s => JSON.parse(s)).filter(s => s.status === 'active');
 
-    return c.json({ seeds: parsedSeeds });
+    const approvedSeeds = await Promise.all(parsedSeeds.map(async (seed) => {
+      const producerProfileData = await kv.get(`user:${seed.producer_id}`);
+      if (!producerProfileData) return null;
+      const producerProfile = JSON.parse(producerProfileData);
+      if (producerProfile.role === 'producer' && producerProfile.producer_verified) {
+        return seed;
+      }
+      return null;
+    }));
+
+    return c.json({ seeds: approvedSeeds.filter(Boolean) });
   } catch (error) {
     console.log('Get seeds error:', error);
     return c.json({ error: 'Failed to get seeds' }, 500);
@@ -482,7 +492,18 @@ app.get("/make-server-8bf31221/seeds/:id", async (c) => {
       return c.json({ error: 'Seed not found' }, 404);
     }
 
-    return c.json({ seed: JSON.parse(seedData) });
+    const seed = JSON.parse(seedData);
+    const producerProfileData = await kv.get(`user:${seed.producer_id}`);
+    if (!producerProfileData) {
+      return c.json({ error: 'Seed not found' }, 404);
+    }
+
+    const producerProfile = JSON.parse(producerProfileData);
+    if (producerProfile.role !== 'producer' || !producerProfile.producer_verified) {
+      return c.json({ error: 'Seed not found' }, 404);
+    }
+
+    return c.json({ seed });
   } catch (error) {
     console.log('Get seed error:', error);
     return c.json({ error: 'Failed to get seed' }, 500);
