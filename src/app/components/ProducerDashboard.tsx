@@ -20,13 +20,26 @@ export function ProducerDashboard() {
   const [newListing, setNewListing] = useState({
     name: "",
     variety: "",
+    category: "",
     price: "",
     available: "",
     minOrder: "",
     description: "",
+    features: [] as string[],
   });
+  const [newFeature, setNewFeature] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]);
+
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setFilePreviews(urls);
+
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [files]);
 
   // Fetch producer's seeds and orders
   useEffect(() => {
@@ -77,8 +90,17 @@ export function ProducerDashboard() {
   };
 
   const handleSubmitListing = async () => {
-    if (!newListing.name || !newListing.variety || !newListing.price || !newListing.available || !newListing.minOrder) {
-      alert("Please fill in all required fields");
+    if (
+      !newListing.name ||
+      !newListing.variety ||
+      !newListing.category ||
+      !newListing.price ||
+      !newListing.available ||
+      !newListing.minOrder ||
+      newListing.features.length === 0 ||
+      files.length === 0
+    ) {
+      alert("Please fill in all required fields and add at least one photo.");
       return;
     }
 
@@ -127,10 +149,12 @@ export function ProducerDashboard() {
         body: JSON.stringify({
           name: newListing.name,
           variety: newListing.variety,
+          category: newListing.category,
           price: parseFloat(newListing.price),
           available: parseFloat(newListing.available),
           minOrder: parseFloat(newListing.minOrder),
           description: newListing.description,
+          keyFeatures: newListing.features,
           images: imageUrls,
         }),
       });
@@ -144,11 +168,14 @@ export function ProducerDashboard() {
       setNewListing({
         name: "",
         variety: "",
+        category: "",
         price: "",
         available: "",
         minOrder: "",
         description: "",
+        features: [],
       });
+      setNewFeature("");
       
       // Refresh seeds list
       if (user?.id) {
@@ -469,21 +496,6 @@ export function ProducerDashboard() {
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Seed Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={newListing.name}
-                      onChange={handleNewListingChange}
-                      disabled={submitting}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
-                      placeholder="e.g., Kinigi Premium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Variety *
                     </label>
                     <select
@@ -500,6 +512,27 @@ export function ProducerDashboard() {
                       <option value="Kirundo">Kirundo</option>
                       <option value="Sangwe">Sangwe</option>
                       <option value="Mabondo">Mabondo</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Seed Category *
+                    </label>
+                    <select
+                      name="category"
+                      value={newListing.category}
+                      onChange={handleNewListingChange}
+                      disabled={submitting}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
+                    >
+                      <option value="">Select category</option>
+                      <option value="Vegetable">Mini tubers (G1)</option>
+                      <option value="Fruit">Apical cuttings(G1)</option>
+                      <option value="Grain">Pre basic seed (G2)</option>
+                      <option value="Herb">Basic seed (G3)</option>
+                      <option value="Flower">Certified seed (G4)</option>
+                      <option value="Other">Other</option>
                     </select>
                   </div>
 
@@ -566,17 +599,84 @@ export function ProducerDashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                      disabled={submitting}
-                      className="w-full"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Key Features *
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newFeature}
+                        onChange={(e) => setNewFeature(e.target.value)}
+                        disabled={submitting}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
+                        placeholder="Add a feature, e.g., drought tolerant"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newFeature.trim()) return;
+                          setNewListing((prev) => ({
+                            ...prev,
+                            features: [...prev.features, newFeature.trim()],
+                          }));
+                          setNewFeature("");
+                        }}
+                        disabled={submitting}
+                        className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {newListing.features.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {newListing.features.map((feature, index) => (
+                          <span
+                            key={`${feature}-${index}`}
+                            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-sm text-green-700"
+                          >
+                            {feature}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setNewListing((prev) => ({
+                                  ...prev,
+                                  features: prev.features.filter((_, i) => i !== index),
+                                }))
+                              }
+                              className="text-green-700 hover:text-green-900"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Photos *</label>
+                    <label className="inline-flex items-center justify-center w-full px-4 py-3 border border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-green-500 hover:bg-green-50 transition-colors bg-white text-gray-700">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                        disabled={submitting}
+                        className="hidden"
+                      />
+                      <span className="text-sm font-medium">Select photos or drag them here</span>
+                    </label>
                     {files.length > 0 && (
-                      <div className="mt-2 text-sm text-gray-600">{files.length} file(s) selected</div>
+                      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {filePreviews.map((preview, index) => (
+                          <div key={preview} className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white">
+                            <img src={preview} alt={`Preview ${index + 1}`} className="h-28 w-full object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 bg-black/40 px-2 py-1 text-xs text-white text-center">
+                              {files[index]?.name}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
 
