@@ -1765,15 +1765,33 @@ app.put("/super-admin/change-role/:userId", async (c) => {
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
 
-    await appendAuditLog({
-      actor_id: user.id,
-      actor_name: profile.name || profile.email,
-      actor_role: profile.role,
-      action: "role_changed",
-      target_type: "user",
-      target_id: userId,
-      details: `Changed role from ${previousRole} to ${newRole}`,
-    });
+    // If role changed away from producer, deactivate any active seed listings
+    if (previousRole === 'producer' && newRole !== 'producer') {
+      try {
+        const allSeeds = await kv.getByPrefix('seed:');
+        for (const s of allSeeds) {
+          const seed = parseStored(s);
+          if (!seed) continue;
+          if (seed.producer_id === userId && seed.status === 'active') {
+            seed.status = 'inactive';
+            seed.inactivated_at = new Date().toISOString();
+            seed.inactivated_by = user.id;
+            await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+          }
+        }
+        await appendAuditLog({
+          actor_id: user.id,
+          actor_name: profile.name || profile.email,
+          actor_role: profile.role,
+          action: 'deactivate_seeds_on_role_change',
+          target_type: 'user',
+          target_id: userId,
+          details: `Role changed from ${previousRole} to ${newRole}; deactivated active seeds for user ${userId}`,
+        });
+      } catch (err) {
+        console.log('Error deactivating seeds after role change:', err);
+      }
+    }
 
     return c.json({ success: true, user: targetUser });
   } catch (error) {
@@ -1817,6 +1835,32 @@ app.delete("/super-admin/delete-user/:userId", async (c) => {
     // Delete from Supabase Auth
     const supabase = getSupabaseClient();
     await supabase.auth.admin.deleteUser(userId);
+
+    // Deactivate any active seed listings for the deleted user
+    try {
+      const allSeeds = await kv.getByPrefix('seed:');
+      for (const s of allSeeds) {
+        const seed = parseStored(s);
+        if (!seed) continue;
+        if (seed.producer_id === userId && seed.status === 'active') {
+          seed.status = 'inactive';
+          seed.inactivated_at = new Date().toISOString();
+          seed.inactivated_by = user.id;
+          await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+        }
+      }
+      await appendAuditLog({
+        actor_id: user.id,
+        actor_name: profile.name || profile.email,
+        actor_role: profile.role,
+        action: 'deactivate_seeds_on_delete',
+        target_type: 'user',
+        target_id: userId,
+        details: `User deleted; deactivated active seeds for user ${userId}`,
+      });
+    } catch (err) {
+      console.log('Error deactivating seeds on delete:', err);
+    }
 
     // Delete from KV store
     await kv.del(`user:${userId}`);
@@ -1876,6 +1920,34 @@ app.put("/super-admin/suspend-user/:userId", async (c) => {
     targetUser.suspended_by = suspended ? user.id : null;
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
+
+    // If suspended, deactivate any active seed listings for this producer
+    if (suspended) {
+      try {
+        const allSeeds = await kv.getByPrefix('seed:');
+        for (const s of allSeeds) {
+          const seed = parseStored(s);
+          if (!seed) continue;
+          if (seed.producer_id === userId && seed.status === 'active') {
+            seed.status = 'inactive';
+            seed.inactivated_at = new Date().toISOString();
+            seed.inactivated_by = user.id;
+            await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+          }
+        }
+        await appendAuditLog({
+          actor_id: user.id,
+          actor_name: profile.name || profile.email,
+          actor_role: profile.role,
+          action: 'deactivate_seeds_on_suspend',
+          target_type: 'user',
+          target_id: userId,
+          details: `User suspended; deactivated active seeds for user ${userId}`,
+        });
+      } catch (err) {
+        console.log('Error deactivating seeds on suspend:', err);
+      }
+    }
 
     await appendAuditLog({
       actor_id: user.id,
