@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 import { serverUrl } from "../lib/supabase";
-import { publicAnonKey } from "/utils/supabase/info";
+import { publicAnonKey } from '../../../utils/supabase/info';
 import {
   slugifyCategoryValue,
   DEFAULT_SEED_CATEGORIES,

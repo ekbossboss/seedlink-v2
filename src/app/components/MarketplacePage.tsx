@@ -15,7 +15,9 @@ async function fetchMarketplaceListings(): Promise<{ seeds: MarketplaceSeed[]; m
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     console.error("Marketplace seeds fetch failed:", response.status, text || response.statusText);
-    throw new Error(`Failed to load marketplace listings (status ${response.status})${text ? `: ${text}` : ''}`);
+    throw new Error(
+      `Failed to load marketplace listings (status ${response.status})${text ? `: ${text}` : ''}`,
+    );
   }
   const data = await response.json();
   return {
@@ -90,39 +92,43 @@ export function MarketplacePage() {
 
   const filteredSeeds = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
+
     return seeds
       .filter((seed) => {
         const matchesSearch =
           !query ||
+          seed.name?.toLowerCase().includes(query) ||
           seed.variety?.toLowerCase().includes(query) ||
           getCategoryLabel(seed.category).toLowerCase().includes(query) ||
           seed.producer_name?.toLowerCase().includes(query) ||
           (seed.location?.toLowerCase().includes(query) ?? false);
+
         const matchesVariety =
           selectedVariety === "all" ||
           seed.variety?.toLowerCase() === selectedVariety.toLowerCase();
+
         const matchesCategory =
           selectedCategory === "all" || seed.category === selectedCategory;
+
         const matchesDistrict =
           selectedDistrict === "all" ||
           (seed.location?.toLowerCase().includes(selectedDistrict.toLowerCase()) ?? false);
+
         return matchesSearch && matchesVariety && matchesCategory && matchesDistrict;
       })
       .sort((a, b) => {
         if (sortBy === "price-low") return (a.price || 0) - (b.price || 0);
         if (sortBy === "price-high") return (b.price || 0) - (a.price || 0);
         if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
-        return (
-          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-        );
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       });
   }, [seeds, searchQuery, selectedVariety, selectedCategory, selectedDistrict, sortBy, getCategoryLabel]);
 
   const clearFilters = () => {
+    setSearchQuery("");
     setSelectedVariety("all");
     setSelectedCategory("all");
     setSelectedDistrict("all");
-    setSearchQuery("");
   };
 
   const primaryImage = (seed: MarketplaceSeed) =>
@@ -163,40 +169,37 @@ export function MarketplacePage() {
               {filteredSeeds.length} {filteredSeeds.length === 1 ? "listing" : "listings"}
             </span>
           )}
-          {(searchQuery || selectedVariety !== "all" || selectedCategory !== "all" || selectedDistrict !== "all") && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="text-green-600 hover:text-green-700"
-            >
-              Clear filters
-            </button>
-          )}
         </div>
 
-        <div className="mb-4 sticky top-16 z-10 bg-gray-50/95 backdrop-blur-sm py-1">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] sm:max-w-xs">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="w-full h-8 pl-7 pr-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 focus:border-green-500 bg-white"
-              />
+        <div className="mb-4 sticky top-16 z-10 bg-gray-50/95 backdrop-blur-sm py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex flex-1 min-w-0 gap-2 items-center">
+              <div className="relative flex-1 min-w-[180px] sm:min-w-[240px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, producer, variety, location..."
+                  className="w-full h-10 pl-10 pr-3 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 focus:border-green-500 bg-white"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFilters(!showFilters)}
+                className="sm:hidden inline-flex items-center gap-1 h-10 px-3 text-sm border border-gray-300 rounded-md bg-white text-gray-600 hover:bg-gray-50"
+              >
+                <Filter className="w-4 h-4" />
+                Filters
+              </button>
             </div>
 
-            <div
-              className={`flex flex-wrap items-center gap-2 ${
-                showFilters ? "flex" : "hidden sm:flex"
-              }`}
-            >
+            <div className={`flex flex-wrap items-center gap-2 ${showFilters ? "block" : "hidden sm:flex"}`}>
               <select
                 value={selectedVariety}
                 onChange={(e) => setSelectedVariety(e.target.value)}
                 aria-label="Variety"
-                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+                className="h-10 min-w-[10rem] px-3 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
               >
                 {varieties.map((v) => (
                   <option key={v} value={v === "All Varieties" ? "all" : v}>
@@ -209,7 +212,7 @@ export function MarketplacePage() {
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 aria-label="Category"
-                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+                className="h-10 min-w-[10rem] px-3 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
               >
                 {categoryFilterOptions.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -222,7 +225,7 @@ export function MarketplacePage() {
                 value={selectedDistrict}
                 onChange={(e) => setSelectedDistrict(e.target.value)}
                 aria-label="Location"
-                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[9rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+                className="h-10 min-w-[10rem] px-3 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
               >
                 {districts.map((d) => (
                   <option key={d} value={d === "All Districts" ? "all" : d}>
@@ -235,24 +238,22 @@ export function MarketplacePage() {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 aria-label="Sort by"
-                className="h-8 min-w-0 flex-1 sm:flex-none sm:max-w-[8.5rem] px-2 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
+                className="h-10 min-w-[9rem] px-3 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 bg-white"
               >
                 <option value="newest">Newest</option>
                 <option value="rating">Top rated</option>
                 <option value="price-low">Price ↑</option>
                 <option value="price-high">Price ↓</option>
               </select>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => setShowFilters(!showFilters)}
-              className="sm:hidden h-8 px-2 inline-flex items-center gap-1 text-xs text-gray-600 border border-gray-300 rounded-md bg-white"
-              aria-label="Toggle filters"
-            >
-              <Filter className="w-3.5 h-3.5" />
-              Filters
-            </button>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="h-10 px-3 text-sm border border-gray-300 rounded-md bg-white text-gray-600 hover:bg-gray-50"
+              >
+                Clear filters
+              </button>
+            </div>
           </div>
         </div>
 
@@ -376,22 +377,13 @@ export function MarketplacePage() {
           <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
             <Sprout className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-900 font-medium mb-1 text-sm">
-              {seeds.length === 0 ? "No listings yet" : "No listings match your filters"}
+              {seeds.length === 0 ? "No listings yet" : "No active listings are available."}
             </p>
             <p className="text-gray-600 text-sm mb-3">
               {seeds.length === 0
                 ? "Approved producers can add listings from their dashboard."
-                : "Try adjusting your search or filters."}
+                : "Please check back shortly or contact support if this looks wrong."}
             </p>
-            {seeds.length > 0 && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="text-sm text-green-600 hover:text-green-700 font-medium"
-              >
-                Clear filters
-              </button>
-            )}
           </div>
         )}
       </div>
