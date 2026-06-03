@@ -3,6 +3,11 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import {
+  sendProducerRequestApprovedEmail,
+  sendProducerRequestReceivedEmail,
+  sendProducerRequestRejectedEmail,
+} from "./email.ts";
 
 const FUNCTION_NAME = "make-server-8bf31221";
 const app = new Hono().basePath(`/${FUNCTION_NAME}`);
@@ -562,6 +567,10 @@ app.post("/access-requests", async (c) => {
     await kv.set(`access_request:${accessRequest.id}`, JSON.stringify(accessRequest));
     await kv.set(`access_request_user:${user.id}`, accessRequest.id);
 
+    sendProducerRequestReceivedEmail(accessRequest).catch((err) =>
+      console.log("Producer received email error:", err),
+    );
+
     return c.json({ success: true, request: accessRequest });
   } catch (error) {
     console.log('Access request error:', error);
@@ -626,6 +635,7 @@ app.put("/access-requests/:id", async (c) => {
     }
 
     const request = JSON.parse(requestData);
+    const previousStatus = request.status;
     request.status = status;
     request.reviewed_at = new Date().toISOString();
     request.reviewed_by = user.id;
@@ -654,6 +664,16 @@ app.put("/access-requests/:id", async (c) => {
         userProfile.business_name = request.businessName;
         await kv.set(`user:${request.user_id}`, JSON.stringify(userProfile));
       }
+    }
+
+    if (status === "approved" && previousStatus !== "approved") {
+      sendProducerRequestApprovedEmail(request).catch((err) =>
+        console.log("Producer approved email error:", err),
+      );
+    } else if (status === "rejected" && previousStatus !== "rejected") {
+      sendProducerRequestRejectedEmail(request, reason).catch((err) =>
+        console.log("Producer rejected email error:", err),
+      );
     }
 
     return c.json({ success: true, request });

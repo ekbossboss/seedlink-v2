@@ -110,7 +110,9 @@ export function ProducerRegistrationPage() {
         throw new Error(error.error || 'Failed to submit request');
       }
 
-      alert('Application submitted successfully! You will receive an email notification once verified.');
+      alert(
+        'Application submitted successfully! Check your email for a confirmation. We will email you again when your application is approved or rejected.',
+      );
       navigate('/marketplace');
     } catch (error: any) {
       console.error('Submit error:', error);
