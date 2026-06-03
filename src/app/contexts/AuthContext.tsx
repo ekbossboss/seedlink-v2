@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase, serverUrl } from '../lib/supabase';
-import { publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '../../../utils/supabase/info';
 
 interface User {
   id: string;

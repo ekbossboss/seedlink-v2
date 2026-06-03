@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { serverUrl } from "../lib/supabase";
-import { publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '../../../utils/supabase/info';
 
 export function TestServerPage() {
   const [result, setResult] = useState("");
@@ -47,6 +47,22 @@ export function TestServerPage() {
     }
   };
 
+  const testSeeds = async () => {
+    setLoading(true);
+    setResult("Testing seeds...");
+    try {
+      const response = await fetch(`${serverUrl}/seeds`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      });
+      const text = await response.text();
+      setResult(`Seeds Test Response:\nStatus: ${response.status}\nBody: ${text}`);
+    } catch (error: any) {
+      setResult(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
@@ -73,6 +89,13 @@ export function TestServerPage() {
               className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400"
             >
               Test Signup Endpoint
+            </button>
+            <button
+              onClick={testSeeds}
+              disabled={loading}
+              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400"
+            >
+              Test Seeds Endpoint
             </button>
           </div>
         </div>

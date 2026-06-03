@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { serverUrl } from "../lib/supabase";
-import { publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '../../../utils/supabase/info';
 import { Mail, Lock, User, AlertCircle, CheckCircle, Shield, Loader2 } from "lucide-react";
 
 export function InitSuperAdminPage() {

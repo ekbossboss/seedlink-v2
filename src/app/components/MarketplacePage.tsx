@@ -2,13 +2,20 @@ import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router";
 import { Search, Filter, MapPin, Star, ChevronRight, Sprout, Truck } from "lucide-react";
 import { serverUrl } from "../lib/supabase";
+import { publicAnonKey } from '../../../utils/supabase/info';
 import type { MarketplaceSeed } from "../types/marketplace";
 import { usePlatformCatalog } from "../contexts/PlatformCatalogContext";
 
 async function fetchMarketplaceListings(): Promise<{ seeds: MarketplaceSeed[]; maintenanceMode: boolean }> {
-  const response = await fetch(`${serverUrl}/seeds`);
+  const response = await fetch(`${serverUrl}/seeds`, {
+    headers: {
+      Authorization: `Bearer ${publicAnonKey}`,
+    },
+  });
   if (!response.ok) {
-    throw new Error("Failed to load marketplace listings");
+    const text = await response.text().catch(() => "");
+    console.error("Marketplace seeds fetch failed:", response.status, text || response.statusText);
+    throw new Error(`Failed to load marketplace listings (status ${response.status})${text ? `: ${text}` : ''}`);
   }
   const data = await response.json();
   return {
