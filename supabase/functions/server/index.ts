@@ -2,7 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import * as kv from "./kv_store.tsx";
+import * as kv from "./kv_store.ts";
 
 const app = new Hono();
 
@@ -1046,6 +1046,34 @@ app.put("/make-server-8bf31221/super-admin/change-role/:userId", async (c) => {
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
 
+    // If role changed away from producer, deactivate any active seed listings
+    if (newRole !== 'producer') {
+      try {
+        const allSeeds = await kv.getByPrefix('seed:');
+        for (const s of allSeeds) {
+          const seed = parseStored(s);
+          if (!seed) continue;
+          if (seed.producer_id === userId && seed.status === 'active') {
+            seed.status = 'inactive';
+            seed.inactivated_at = new Date().toISOString();
+            seed.inactivated_by = user.id;
+            await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+          }
+        }
+        await appendAuditLog({
+          actor_id: user.id,
+          actor_name: profile.name || profile.email,
+          actor_role: profile.role,
+          action: 'deactivate_seeds_on_role_change',
+          target_type: 'user',
+          target_id: userId,
+          details: `Role changed to ${newRole}; deactivated active seeds for user ${userId}`,
+        });
+      } catch (err) {
+        console.log('Error deactivating seeds after role change:', err);
+      }
+    }
+
     return c.json({ success: true, user: targetUser });
   } catch (error) {
     console.log('Change role error:', error);
@@ -1088,6 +1116,32 @@ app.delete("/make-server-8bf31221/super-admin/delete-user/:userId", async (c) =>
     // Delete from Supabase Auth
     const supabase = getSupabaseClient();
     await supabase.auth.admin.deleteUser(userId);
+
+    // Deactivate any active seed listings for the deleted user
+    try {
+      const allSeeds = await kv.getByPrefix('seed:');
+      for (const s of allSeeds) {
+        const seed = parseStored(s);
+        if (!seed) continue;
+        if (seed.producer_id === userId && seed.status === 'active') {
+          seed.status = 'inactive';
+          seed.inactivated_at = new Date().toISOString();
+          seed.inactivated_by = user.id;
+          await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+        }
+      }
+      await appendAuditLog({
+        actor_id: user.id,
+        actor_name: profile.name || profile.email,
+        actor_role: profile.role,
+        action: 'deactivate_seeds_on_delete',
+        target_type: 'user',
+        target_id: userId,
+        details: `User deleted; deactivated active seeds for user ${userId}`,
+      });
+    } catch (err) {
+      console.log('Error deactivating seeds on delete:', err);
+    }
 
     // Delete from KV store
     await kv.del(`user:${userId}`);
@@ -1137,6 +1191,34 @@ app.put("/make-server-8bf31221/super-admin/suspend-user/:userId", async (c) => {
     targetUser.suspended_by = suspended ? user.id : null;
 
     await kv.set(`user:${userId}`, JSON.stringify(targetUser));
+
+    // If suspended, mark their active seeds as inactive so they disappear from marketplace
+    if (suspended) {
+      try {
+        const allSeeds = await kv.getByPrefix('seed:');
+        for (const s of allSeeds) {
+          const seed = parseStored(s);
+          if (!seed) continue;
+          if (seed.producer_id === userId && seed.status === 'active') {
+            seed.status = 'inactive';
+            seed.inactivated_at = new Date().toISOString();
+            seed.inactivated_by = user.id;
+            await kv.set(`seed:${seed.id}`, JSON.stringify(seed));
+          }
+        }
+        await appendAuditLog({
+          actor_id: user.id,
+          actor_name: profile.name || profile.email,
+          actor_role: profile.role,
+          action: 'deactivate_seeds_on_suspend',
+          target_type: 'user',
+          target_id: userId,
+          details: `User suspended; deactivated active seeds for user ${userId}`,
+        });
+      } catch (err) {
+        console.log('Error deactivating seeds on suspend:', err);
+      }
+    }
 
     return c.json({ success: true, user: targetUser });
   } catch (error) {
