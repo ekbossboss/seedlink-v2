@@ -12,6 +12,16 @@ import {
 const FUNCTION_NAME = "make-server-8bf31221";
 const app = new Hono().basePath(`/${FUNCTION_NAME}`);
 
+// Log SMTP configuration status on startup
+const smtpHost = Deno.env.get("SMTP_HOSTNAME") || Deno.env.get("SMTP_HOST");
+const smtpUser = Deno.env.get("SMTP_USERNAME") || Deno.env.get("SMTP_USER");
+const smtpPass = Deno.env.get("SMTP_PASSWORD") || Deno.env.get("SMTP_PASS");
+const isSmtpConfigured = Boolean(smtpHost && smtpUser && smtpPass);
+console.log(`[${FUNCTION_NAME}] SMTP configured:`, isSmtpConfigured ? "YES" : "NO (emails will not be sent!)");
+if (!isSmtpConfigured) {
+  console.log(`[${FUNCTION_NAME}] To enable emails, set: SMTP_HOSTNAME, SMTP_USERNAME, SMTP_PASSWORD`);
+}
+
 // Enable logger
 app.use('*', logger(console.log));
 
@@ -567,9 +577,13 @@ app.post("/access-requests", async (c) => {
     await kv.set(`access_request:${accessRequest.id}`, JSON.stringify(accessRequest));
     await kv.set(`access_request_user:${user.id}`, accessRequest.id);
 
-    sendProducerRequestReceivedEmail(accessRequest).catch((err) =>
-      console.log("Producer received email error:", err),
-    );
+    // Send confirmation email asynchronously (don't block response)
+    try {
+      await sendProducerRequestReceivedEmail(accessRequest);
+      console.log("Producer request received email sent to:", user.email);
+    } catch (err) {
+      console.error("Failed to send producer received email:", err);
+    }
 
     return c.json({ success: true, request: accessRequest });
   } catch (error) {
@@ -667,13 +681,19 @@ app.put("/access-requests/:id", async (c) => {
     }
 
     if (status === "approved" && previousStatus !== "approved") {
-      sendProducerRequestApprovedEmail(request).catch((err) =>
-        console.log("Producer approved email error:", err),
-      );
+      try {
+        await sendProducerRequestApprovedEmail(request);
+        console.log("Producer approved email sent to:", request.user_email);
+      } catch (err) {
+        console.error("Failed to send producer approved email:", err);
+      }
     } else if (status === "rejected" && previousStatus !== "rejected") {
-      sendProducerRequestRejectedEmail(request, reason).catch((err) =>
-        console.log("Producer rejected email error:", err),
-      );
+      try {
+        await sendProducerRequestRejectedEmail(request, reason);
+        console.log("Producer rejected email sent to:", request.user_email);
+      } catch (err) {
+        console.error("Failed to send producer rejected email:", err);
+      }
     }
 
     return c.json({ success: true, request });

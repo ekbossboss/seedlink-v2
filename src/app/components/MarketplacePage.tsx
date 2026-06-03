@@ -140,8 +140,7 @@ export function MarketplacePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Seed Marketplace</h1>
           <p className="text-gray-600">
-            Browse potato seed listings from approved producers. The same catalog is shown to
-            every visitor and signed-in user.
+            Buy quality potato seed from certified seed producers.
           </p>
         </div>
       </div>
