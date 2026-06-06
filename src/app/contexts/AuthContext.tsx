@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase, serverUrl } from '../lib/supabase';
 
 interface User {
@@ -31,8 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Track whether signIn() is in progress so onAuthStateChange doesn't race with it
+  const signingInRef = useRef(false);
 
-  const fetchProfile = async (token: string): Promise<{ ok: boolean; status?: number }> => {
+  const fetchProfile = async (token: string): Promise<{ ok: boolean; status?: number; errorText?: string }> => {
     try {
       const response = await fetch(`${serverUrl}/auth/profile`, {
         headers: {
@@ -45,12 +47,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.profile);
         return { ok: true, status: response.status };
       } else {
+        // Log actual error for debugging
+        let errorText = '';
+        try { errorText = await response.text(); } catch {}
+        console.error(`[fetchProfile] HTTP ${response.status}:`, errorText);
         setUser(null);
         setAccessToken(null);
-        return { ok: false, status: response.status };
+        return { ok: false, status: response.status, errorText };
       }
     } catch (error) {
-      console.error('Failed to fetch profile:', error);
+      console.error('[fetchProfile] Network/parse error:', error);
       setUser(null);
       setAccessToken(null);
       return { ok: false };
@@ -58,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Check for existing session
+    // Restore session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.access_token) {
         setAccessToken(session.access_token);
@@ -67,10 +73,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes (token refresh, sign-out, etc.)
+    // We skip SIGNED_IN events when signIn() is already handling them to avoid a race.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && signingInRef.current) {
+        // signIn() is managing this — don't duplicate the fetchProfile call
+        return;
+      }
       if (session?.access_token) {
         setAccessToken(session.access_token);
         fetchProfile(session.access_token);
@@ -84,24 +95,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    signingInRef.current = true;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    if (data.session?.access_token) {
-      setAccessToken(data.session.access_token);
-      const profileResult = await fetchProfile(data.session.access_token);
-      if (!profileResult.ok) {
-        await supabase.auth.signOut();
-        throw new Error(
-          profileResult.status === 404
-            ? 'Account profile not found. Please sign up or contact support.'
-            : 'Failed to load your profile. Please try again.'
-        );
+      if (data.session?.access_token) {
+        setAccessToken(data.session.access_token);
+        const profileResult = await fetchProfile(data.session.access_token);
+        if (!profileResult.ok) {
+          await supabase.auth.signOut();
+          if (profileResult.status === 404) {
+            throw new Error('Account profile not found. Please sign up or contact support.');
+          }
+          // Show the actual status so it's easier to diagnose
+          throw new Error(
+            `Failed to load your profile (HTTP ${profileResult.status ?? 'network error'}). Please try again or contact support.`
+          );
+        }
       }
+    } finally {
+      signingInRef.current = false;
     }
   };
 
@@ -122,8 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        console.error('Failed to parse response:', responseText);
-        throw new Error('Server returned invalid response. Please check server logs.');
+        console.error('Failed to parse signup response:', responseText);
+        throw new Error('Server returned invalid response. Please check the edge function logs.');
       }
 
       if (!response.ok) {
