@@ -30,7 +30,7 @@ supabase link --project-ref aksuofawpsahoxivigmn
 From the root of your SeedLink project folder:
 
 ```bash
-supabase functions deploy server --no-verify-jwt
+supabase functions deploy make-server-8bf31221 --no-verify-jwt
 ```
 
 > ⚠️ The `--no-verify-jwt` flag is needed because the
@@ -118,5 +118,5 @@ supabase functions deploy make-server-8bf31221 --no-verify-jwt
 
 To view live logs:
 ```bash
-supabase functions logs server
+supabase functions logs make-server-8bf31221
 ```
