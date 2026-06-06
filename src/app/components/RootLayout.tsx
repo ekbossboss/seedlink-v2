@@ -450,11 +450,9 @@ export function RootLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="bg-green-600 p-2 rounded-lg">
-                  <Sprout className="w-5 h-5 text-white" />
-                </div>
-                <span className="font-bold text-white">SeedLink</span>
+              <div className="flex items-center gap-3 mb-4">
+                <img src="/logo.png" alt="SeedLink logo" className="h-10 w-auto" />
+                <span className="font-bold text-white text-lg">SeedLink</span>
               </div>
               <p className="text-sm">
                 Connecting certified potato seed producers with farmers across Rwanda.

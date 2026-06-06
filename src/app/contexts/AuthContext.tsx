@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase, serverUrl } from '../lib/supabase';
-import { publicAnonKey } from '../../../utils/supabase/info';
 
 interface User {
   id: string;
@@ -112,7 +111,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
         },
         body: JSON.stringify({ email, password, name, role }),
       });

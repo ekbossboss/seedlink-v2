@@ -4,6 +4,7 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
 import {
+  isSmtpConfigured,
   sendProducerRequestApprovedEmail,
   sendProducerRequestReceivedEmail,
   sendProducerRequestRejectedEmail,
@@ -13,13 +14,15 @@ const FUNCTION_NAME = "make-server-8bf31221";
 const app = new Hono().basePath(`/${FUNCTION_NAME}`);
 
 // Log SMTP configuration status on startup
-const smtpHost = Deno.env.get("SMTP_HOSTNAME") || Deno.env.get("SMTP_HOST");
-const smtpUser = Deno.env.get("SMTP_USERNAME") || Deno.env.get("SMTP_USER");
-const smtpPass = Deno.env.get("SMTP_PASSWORD") || Deno.env.get("SMTP_PASS");
-const isSmtpConfigured = Boolean(smtpHost && smtpUser && smtpPass);
-console.log(`[${FUNCTION_NAME}] SMTP configured:`, isSmtpConfigured ? "YES" : "NO (emails will not be sent!)");
-if (!isSmtpConfigured) {
-  console.log(`[${FUNCTION_NAME}] To enable emails, set: SMTP_HOSTNAME, SMTP_USERNAME, SMTP_PASSWORD`);
+console.log(
+  `[${FUNCTION_NAME}] SMTP configured:`,
+  isSmtpConfigured() ? "YES" : "NO (emails will not be sent!)",
+);
+if (!isSmtpConfigured()) {
+  console.log(
+    `[${FUNCTION_NAME}] To enable emails, set one of: SMTP_HOSTNAME/SMTP_HOST, SMTP_USERNAME/SMTP_USER, SMTP_PASSWORD/SMTP_PASS or MAILERSEND_API_KEY`,
+  );
+  console.log(`[${FUNCTION_NAME}] Optional: SMTP_FROM or EMAIL_FROM`);
 }
 
 // Enable logger
@@ -75,7 +78,7 @@ const verifyUser = async (authHeader: string | null) => {
   const token = authHeader.split(' ')[1];
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
@@ -458,7 +461,7 @@ app.get("/auth/profile", async (c) => {
       return c.json({ error: 'Profile not found' }, 404);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     return c.json({ profile });
   } catch (error) {
     console.log('Get profile error:', error);
@@ -481,7 +484,7 @@ app.put("/auth/profile", async (c) => {
       return c.json({ error: 'Profile not found' }, 404);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     const updatedProfile = {
       ...profile,
       id: user.id,
@@ -606,13 +609,13 @@ app.get("/access-requests", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (!isAdminOrSuperAdmin(profile)) {
       return c.json({ error: 'Forbidden - Admin/Super Admin only' }, 403);
     }
 
     const requests = await kv.getByPrefix('access_request:req_');
-    const parsedRequests = requests.map(r => JSON.parse(r));
+    const parsedRequests = requests.map(r => parseStored(r));
 
     return c.json({ requests: parsedRequests });
   } catch (error) {
@@ -635,7 +638,7 @@ app.put("/access-requests/:id", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (!isAdminOrSuperAdmin(profile)) {
       return c.json({ error: 'Forbidden - Admin/Super Admin only' }, 403);
     }
@@ -648,7 +651,7 @@ app.put("/access-requests/:id", async (c) => {
       return c.json({ error: 'Request not found' }, 404);
     }
 
-    const request = JSON.parse(requestData);
+    const request = parseStored(requestData);
     const previousStatus = request.status;
     request.status = status;
     request.reviewed_at = new Date().toISOString();
@@ -672,7 +675,7 @@ app.put("/access-requests/:id", async (c) => {
     if (status === 'approved') {
       const userProfileData = await kv.get(`user:${request.user_id}`);
       if (userProfileData) {
-        const userProfile = JSON.parse(userProfileData);
+        const userProfile = parseStored(userProfileData);
         userProfile.role = 'producer';
         userProfile.producer_verified = true;
         userProfile.business_name = request.businessName;
@@ -844,7 +847,7 @@ app.get("/seeds/producer/:userId", async (c) => {
     const userId = c.req.param('userId');
     const seeds = await kv.getByPrefix('seed:seed_');
     const producerSeeds = seeds
-      .map(s => JSON.parse(s))
+      .map(s => parseStored(s))
       .filter(s => s.producer_id === userId);
 
     return c.json({ seeds: producerSeeds });
@@ -886,7 +889,7 @@ app.get("/producers/:id", async (c) => {
       .filter((s) => s.producer_id === producerId && s.status === 'active');
 
     const reviewsData = await kv.getByPrefix(`review:producer_${producerId}_`);
-    const reviews = reviewsData.map(r => JSON.parse(r));
+    const reviews = reviewsData.map(r => parseStored(r));
     const averageRating = reviews.length > 0
       ? reviews.reduce((sum, review) => sum + (review.rating || 0), 0) / reviews.length
       : null;
@@ -927,7 +930,7 @@ app.post("/producers/:id/reviews", async (c) => {
     }
 
     const reviewerProfileData = await kv.get(`user:${user.id}`);
-    const reviewerProfile = reviewerProfileData ? JSON.parse(reviewerProfileData) : null;
+    const reviewerProfile = reviewerProfileData ? parseStored(reviewerProfileData) : null;
     const reviewerName = reviewerProfile?.business_name || reviewerProfile?.name || 'Buyer';
 
     const review = {
@@ -1014,7 +1017,7 @@ app.delete("/seeds/:id", async (c) => {
       return c.json({ error: 'Seed not found' }, 404);
     }
 
-    const seed = JSON.parse(seedData);
+    const seed = parseStored(seedData);
 
     // Check if user owns this seed
     if (seed.producer_id !== user.id) {
@@ -1069,7 +1072,7 @@ app.get("/orders/my-orders", async (c) => {
 
     const allOrders = await kv.getByPrefix('order:order_');
     const userOrders = allOrders
-      .map(o => JSON.parse(o))
+      .map(o => parseStored(o))
       .filter(o => o.buyer_id === user.id);
 
     return c.json({ orders: userOrders });
@@ -1089,7 +1092,7 @@ app.get("/orders/producer-orders", async (c) => {
 
     const allOrders = await kv.getByPrefix('order:order_');
     const producerOrders = allOrders
-      .map(o => JSON.parse(o))
+      .map(o => parseStored(o))
       .filter(o => o.producer_id === user.id);
 
     return c.json({ orders: producerOrders });
@@ -1114,7 +1117,7 @@ app.put("/orders/:id", async (c) => {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = JSON.parse(orderData);
+    const order = parseStored(orderData);
     const updates = await c.req.json();
     const updatedOrder = { ...order, ...updates };
 
@@ -1569,7 +1572,7 @@ app.get("/favorites", async (c) => {
     }
 
     const allFavorites = await kv.getByPrefix(`favorite:fav_${user.id}_`);
-    const favorites = allFavorites.map(f => JSON.parse(f));
+    const favorites = allFavorites.map(f => parseStored(f));
 
     return c.json({ favorites });
   } catch (error) {
@@ -1613,7 +1616,7 @@ app.get("/admin/users", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (!isAdminOrSuperAdmin(profile)) {
       return c.json({ error: 'Forbidden - Admin/Super Admin only' }, 403);
     }
@@ -1621,7 +1624,7 @@ app.get("/admin/users", async (c) => {
     const users = await kv.getByPrefix('user:');
     const parsedUsers = users
       .filter(u => !u.includes('user_email:'))
-      .map(u => JSON.parse(u));
+      .map(u => parseStored(u));
 
     return c.json({ users: parsedUsers });
   } catch (error) {
@@ -1643,7 +1646,7 @@ app.get("/admin/stats", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (!isAdminOrSuperAdmin(profile)) {
       return c.json({ error: 'Forbidden - Admin/Super Admin only' }, 403);
     }
@@ -1653,8 +1656,8 @@ app.get("/admin/stats", async (c) => {
     const orders = await kv.getByPrefix('order:');
     const requests = await kv.getByPrefix('access_request:req_');
 
-    const parsedUsers = users.filter(u => !u.includes('user_email:')).map(u => JSON.parse(u));
-    const parsedRequests = requests.map(r => JSON.parse(r));
+    const parsedUsers = users.filter(u => !u.includes('user_email:')).map(u => parseStored(u));
+    const parsedRequests = requests.map(r => parseStored(r));
 
     const stats = {
       total_users: parsedUsers.length,
@@ -1691,7 +1694,7 @@ app.post("/super-admin/create-user", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (profile.role !== 'super_admin') {
       return c.json({ error: 'Forbidden - Super Admin only' }, 403);
     }
@@ -1760,7 +1763,7 @@ app.put("/super-admin/change-role/:userId", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (profile.role !== 'super_admin') {
       return c.json({ error: 'Forbidden - Super Admin only' }, 403);
     }
@@ -1777,7 +1780,7 @@ app.put("/super-admin/change-role/:userId", async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const targetUser = JSON.parse(targetUserData);
+    const targetUser = parseStored(targetUserData);
     const previousRole = targetUser.role;
     targetUser.role = newRole;
     targetUser.role_updated_at = new Date().toISOString();
@@ -1833,7 +1836,7 @@ app.delete("/super-admin/delete-user/:userId", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (profile.role !== 'super_admin') {
       return c.json({ error: 'Forbidden - Super Admin only' }, 403);
     }
@@ -1850,7 +1853,7 @@ app.delete("/super-admin/delete-user/:userId", async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const targetUser = JSON.parse(targetUserData);
+    const targetUser = parseStored(targetUserData);
 
     // Delete from Supabase Auth
     const supabase = getSupabaseClient();
@@ -1916,7 +1919,7 @@ app.put("/super-admin/suspend-user/:userId", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profile = JSON.parse(profileData);
+    const profile = parseStored(profileData);
     if (profile.role !== 'super_admin') {
       return c.json({ error: 'Forbidden - Super Admin only' }, 403);
     }
@@ -1933,7 +1936,7 @@ app.put("/super-admin/suspend-user/:userId", async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
-    const targetUser = JSON.parse(targetUserData);
+    const targetUser = parseStored(targetUserData);
     targetUser.suspended = suspended;
     targetUser.suspension_reason = reason || null;
     targetUser.suspended_at = suspended ? new Date().toISOString() : null;
@@ -2234,3 +2237,4 @@ app.get("/super-admin/export/:type", async (c) => {
 });
 
 Deno.serve(app.fetch);
+

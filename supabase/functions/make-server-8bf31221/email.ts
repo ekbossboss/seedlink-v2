@@ -15,15 +15,35 @@ const appUrl = () =>
 
 /** Reads SMTP settings — use the same values as Supabase Dashboard → Authentication → SMTP. */
 const getSmtpConfig = () => {
-  const host = Deno.env.get("SMTP_HOSTNAME") || Deno.env.get("SMTP_HOST");
-  const port = Number(Deno.env.get("SMTP_PORT") || "587");
-  const user = Deno.env.get("SMTP_USERNAME") || Deno.env.get("SMTP_USER");
-  const pass = Deno.env.get("SMTP_PASSWORD") || Deno.env.get("SMTP_PASS");
+  const host =
+    Deno.env.get("SMTP_HOSTNAME") ||
+    Deno.env.get("SMTP_HOST") ||
+    Deno.env.get("MAILERSEND_SMTP_HOST") ||
+    Deno.env.get("MAILERSEND_SMTP_HOSTNAME");
+  const port = Number(Deno.env.get("SMTP_PORT") || Deno.env.get("MAILERSEND_SMTP_PORT") || "587");
+  let user =
+    Deno.env.get("SMTP_USERNAME") ||
+    Deno.env.get("SMTP_USER") ||
+    Deno.env.get("MAILERSEND_SMTP_USERNAME") ||
+    Deno.env.get("MAILERSEND_SMTP_USER");
+  const pass =
+    Deno.env.get("SMTP_PASSWORD") ||
+    Deno.env.get("SMTP_PASS") ||
+    Deno.env.get("MAILERSEND_SMTP_PASSWORD") ||
+    Deno.env.get("MAILERSEND_SMTP_PASS") ||
+    Deno.env.get("MAILERSEND_API_KEY");
+
+  if (!user && Deno.env.get("MAILERSEND_API_KEY")) {
+    user = "apikey";
+  }
+
   const from =
     Deno.env.get("SMTP_FROM") ||
     Deno.env.get("EMAIL_FROM") ||
+    Deno.env.get("MAILERSEND_SMTP_FROM") ||
     "SeedLink <noreply@seedlink.rw>";
-  const secureFlag = Deno.env.get("SMTP_SECURE");
+  const secureFlag =
+    Deno.env.get("SMTP_SECURE") || Deno.env.get("MAILERSEND_SMTP_SECURE");
   const secure =
     secureFlag === "true" ? true : secureFlag === "false" ? false : port === 465;
 
