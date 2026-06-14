@@ -4,6 +4,8 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.ts";
 
+declare const Deno: any;
+
 const app = new Hono();
 
 // Enable logger

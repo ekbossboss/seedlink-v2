@@ -1,5 +1,7 @@
 // email.ts — Deno-native email sending (no nodemailer, uses fetch-based SMTP or Resend/MailerSend API)
 
+declare const Deno: any;
+
 type AccessRequestEmailContext = {
   id: string;
   user_email: string;
